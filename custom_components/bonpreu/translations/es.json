@@ -1,0 +1,45 @@
+{
+  "title": "Bonpreu",
+  "config": {
+    "abort": {
+      "invalid_auth_state": "El estado de autenticacion no se inicializo. Empieza de nuevo."
+    },
+    "error": {
+      "cannot_connect": "No se puede conectar con la API de Bonpreu.",
+      "invalid_callback_url": "La URL de callback no es valida.",
+      "intermediate_callback_url": "Parece una URL web intermedia. Abre en el navegador la URL que acaba en /sso-login/auth y copia la URL callback final bonpreu-atm://login.",
+      "state_mismatch": "El estado OAuth no coincide.",
+      "auth_declined": "El login fue cancelado o rechazado por Bonpreu.",
+      "auth_retry_requires_new_login": "No se pudo completar el intercambio de tokens. Repite la URL de login para generar una nueva URL callback.",
+      "device_token_failed": "No se pudo obtener el token de dispositivo."
+    },
+    "step": {
+      "user": {
+        "title": "Preparar login",
+        "description": "Esta integracion usa login OAuth asistido.",
+        "data": {
+          "title": "Nombre de la entrada",
+          "use_alternative_mobile": "Usar URI OAuth movil alternativa"
+        }
+      },
+      "callback": {
+        "title": "Pega la URL callback",
+        "description": "Abre esta URL en el navegador e inicia sesion:\n\n{authorization_url}\n\nDespues del login, copia la URL callback completa (redirect URI: {redirect_uri}) y pegala abajo. Los codigos de autorizacion son de un solo uso; si falla el intercambio, reinicia el login para obtener una URL callback nueva.",
+        "data": {
+          "callback_url": "URL callback"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones Bonpreu",
+        "data": {
+          "update_interval_minutes": "Intervalo de actualizacion (minutos)",
+          "enable_checkout": "Activar acciones de checkout"
+        }
+      }
+    }
+  }
+}

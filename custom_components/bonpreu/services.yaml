@@ -1,0 +1,167 @@
+add_to_cart:
+  name: Add To Cart
+  description: Add (or remove) quantity of a product in the active basket.
+  fields:
+    entry_id:
+      required: false
+      example: "abcd1234"
+      selector:
+        text:
+    retailer_product_id:
+      required: true
+      example: "123456"
+      selector:
+        text:
+    delta:
+      required: false
+      default: 1
+      selector:
+        number:
+          min: -50
+          max: 50
+          step: 1
+
+set_cart_quantity:
+  name: Set Cart Quantity
+  description: Set an exact quantity for a product in the active basket.
+  fields:
+    entry_id:
+      required: false
+      example: "abcd1234"
+      selector:
+        text:
+    retailer_product_id:
+      required: true
+      example: "123456"
+      selector:
+        text:
+    target_quantity:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 99
+          step: 1
+
+remove_from_cart:
+  name: Remove From Cart
+  description: Remove a product from the active basket.
+  fields:
+    entry_id:
+      required: false
+      example: "abcd1234"
+      selector:
+        text:
+    retailer_product_id:
+      required: true
+      example: "123456"
+      selector:
+        text:
+
+add_regular_to_cart:
+  name: Add Regular Product To Cart
+  description: Add one of your regular products to the active basket by product ID or product name.
+  fields:
+    entry_id:
+      required: false
+      example: "abcd1234"
+      selector:
+        text:
+    query:
+      required: true
+      example: "123456"
+      selector:
+        text:
+    quantity:
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+
+add_regular_by_id_to_cart:
+  name: Add Regular Product By ID
+  description: Add a regular product to the active basket using an exact retailer product ID.
+  fields:
+    entry_id:
+      required: false
+      example: "abcd1234"
+      selector:
+        text:
+    retailer_product_id:
+      required: true
+      example: "123456"
+      selector:
+        text:
+    quantity:
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+
+add_shopping_list_to_cart:
+  name: Add Shopping List To Cart
+  description: Add all products from a shopping list into active basket.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    list_id:
+      required: true
+      selector:
+        text:
+
+create_shopping_list:
+  name: Create Shopping List
+  description: Create a shopping list.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    list_name:
+      required: true
+      selector:
+        text:
+    products:
+      required: false
+      example: "123456,987654"
+      selector:
+        text:
+
+rename_shopping_list:
+  name: Rename Shopping List
+  description: Rename an existing shopping list.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    list_id:
+      required: true
+      selector:
+        text:
+    list_name:
+      required: true
+      selector:
+        text:
+
+delete_shopping_list:
+  name: Delete Shopping List
+  description: Delete an existing shopping list.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    list_id:
+      required: true
+      selector:
+        text:

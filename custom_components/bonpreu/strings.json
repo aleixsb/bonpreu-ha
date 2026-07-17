@@ -1,0 +1,45 @@
+{
+  "title": "Bonpreu",
+  "config": {
+    "abort": {
+      "invalid_auth_state": "Authentication state was not initialized. Start again."
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Bonpreu API.",
+      "invalid_callback_url": "The callback URL is invalid.",
+      "intermediate_callback_url": "This looks like an intermediate web URL. Open the URL ending with /sso-login/auth in your browser and copy the final bonpreu-atm://login callback URL.",
+      "state_mismatch": "OAuth state does not match.",
+      "auth_declined": "Login was cancelled or rejected by Bonpreu.",
+      "auth_retry_requires_new_login": "Could not finish token exchange. Repeat the login URL to generate a new callback URL.",
+      "device_token_failed": "Could not obtain device token."
+    },
+    "step": {
+      "user": {
+        "title": "Prepare login",
+        "description": "This integration uses assisted OAuth login.",
+        "data": {
+          "title": "Entry name",
+          "use_alternative_mobile": "Use alternative mobile OAuth URI"
+        }
+      },
+      "callback": {
+        "title": "Paste callback URL",
+        "description": "Open this URL in browser and log in:\n\n{authorization_url}\n\nAfter login, copy the full callback URL (redirect URI: {redirect_uri}) and paste it below. Authorization codes are one-time use; if exchange fails, restart login to get a fresh callback URL.",
+        "data": {
+          "callback_url": "Callback URL"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Bonpreu options",
+        "data": {
+          "update_interval_minutes": "Update interval (minutes)",
+          "enable_checkout": "Enable checkout actions"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "title": "Bonpreu",
+  "config": {
+    "abort": {
+      "invalid_auth_state": "L'estat d'autenticacio no s'ha inicialitzat. Torna a comencar."
+    },
+    "error": {
+      "cannot_connect": "No es pot connectar amb l'API de Bonpreu.",
+      "invalid_callback_url": "La URL de callback no es valida.",
+      "intermediate_callback_url": "Aixo sembla una URL web intermedia. Obre al navegador la URL que acaba amb /sso-login/auth i copia la URL callback final bonpreu-atm://login.",
+      "state_mismatch": "L'estat OAuth no coincideix.",
+      "auth_declined": "El login s'ha cancel.lat o rebutjat per Bonpreu.",
+      "auth_retry_requires_new_login": "No s'ha pogut completar l'intercanvi de tokens. Repeteix la URL de login per generar una URL callback nova.",
+      "device_token_failed": "No s'ha pogut obtenir el token de dispositiu."
+    },
+    "step": {
+      "user": {
+        "title": "Preparar login",
+        "description": "Aquesta integracio fa servir login OAuth assistit.",
+        "data": {
+          "title": "Nom de l'entrada",
+          "use_alternative_mobile": "Fer servir URI OAuth mobil alternativa"
+        }
+      },
+      "callback": {
+        "title": "Enganxa la URL callback",
+        "description": "Obre aquesta URL al navegador i inicia sessio:\n\n{authorization_url}\n\nDespres del login, copia la URL callback completa (redirect URI: {redirect_uri}) i enganxa-la a sota. Els codis d'autoritzacio son d'un sol us; si falla l'intercanvi, reinicia el login per obtenir una URL callback nova.",
+        "data": {
+          "callback_url": "URL callback"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcions Bonpreu",
+        "data": {
+          "update_interval_minutes": "Interval d'actualitzacio (minuts)",
+          "enable_checkout": "Activar accions de checkout"
+        }
+      }
+    }
+  }
+}
