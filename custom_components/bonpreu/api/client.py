@@ -351,6 +351,26 @@ class BonpreuApiClient:
             params={"showProductLimit": limit, "productListOffset": offset},
         )
 
+    async def get_user_current(self) -> dict[str, Any]:
+        """Get authenticated customer profile."""
+        data = await self._request("GET", "v1/user/current")
+        if not isinstance(data, dict):
+            raise BonpreuApiError("Invalid user profile response for v1/user/current.")
+        return data
+
+    async def get_products(self, product_ids: list[str]) -> list[dict[str, Any]]:
+        """Get product details for one or more product IDs."""
+        unique_ids = [
+            cleaned
+            for cleaned in dict.fromkeys(product_id.strip() for product_id in product_ids)
+            if cleaned
+        ]
+        if not unique_ids:
+            return []
+
+        data = await self._request("PUT", "v1/products", json=unique_ids)
+        return _parse_products_payload(data)
+
 
 def _looks_json_content_type(content_type: str) -> bool:
     lowered = content_type.lower()
@@ -372,3 +392,36 @@ def _build_http_error_message(status: int, path: str, body: str) -> str:
                 return f"{message}: {value.strip()}"
 
     return message
+
+
+def _parse_products_payload(payload: Any) -> list[dict[str, Any]]:
+    """Parse product list payload across known response envelopes."""
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+
+    if not isinstance(payload, dict):
+        return []
+
+    direct_products = payload.get("products")
+    if isinstance(direct_products, list):
+        return [item for item in direct_products if isinstance(item, dict)]
+
+    product_groups = payload.get("productGroups")
+    if isinstance(product_groups, list):
+        flattened: list[dict[str, Any]] = []
+        for group in product_groups:
+            if not isinstance(group, dict):
+                continue
+            for key in ("products", "decoratedProducts"):
+                values = group.get(key)
+                if isinstance(values, list):
+                    flattened.extend(item for item in values if isinstance(item, dict))
+        if flattened:
+            return flattened
+
+    for key in ("items", "data", "content"):
+        values = payload.get(key)
+        if isinstance(values, list):
+            return [item for item in values if isinstance(item, dict)]
+
+    return []

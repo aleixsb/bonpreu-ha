@@ -13,12 +13,19 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_TOKEN,
     CONF_REFRESH_TOKEN,
+    CONF_RETAILER_CUSTOMER_ID,
     DOMAIN,
 )
 from .coordinator import BonpreuDataUpdateCoordinator
 from .runtime import BonpreuRuntimeData
 
-TO_REDACT = {CONF_ACCESS_TOKEN, CONF_REFRESH_TOKEN, CONF_DEVICE_TOKEN, CONF_DEVICE_ID}
+TO_REDACT = {
+    CONF_ACCESS_TOKEN,
+    CONF_REFRESH_TOKEN,
+    CONF_DEVICE_TOKEN,
+    CONF_DEVICE_ID,
+    CONF_RETAILER_CUSTOMER_ID,
+}
 
 
 async def async_get_config_entry_diagnostics(

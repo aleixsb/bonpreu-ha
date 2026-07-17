@@ -2,7 +2,8 @@
   "title": "Bonpreu",
   "config": {
     "abort": {
-      "invalid_auth_state": "L'estat d'autenticacio no s'ha inicialitzat. Torna a comencar."
+      "invalid_auth_state": "L'estat d'autenticacio no s'ha inicialitzat. Torna a comencar.",
+      "reauth_successful": "La reautenticacio s'ha completat correctament."
     },
     "error": {
       "cannot_connect": "No es pot connectar amb l'API de Bonpreu.",
@@ -36,8 +37,7 @@
       "init": {
         "title": "Opcions Bonpreu",
         "data": {
-          "update_interval_minutes": "Interval d'actualitzacio (minuts)",
-          "enable_checkout": "Activar accions de checkout"
+          "update_interval_minutes": "Interval d'actualitzacio (minuts)"
         }
       }
     }

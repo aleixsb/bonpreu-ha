@@ -29,10 +29,8 @@ CONF_DEVICE_ID: Final = "device_id"
 CONF_DEVICE_TOKEN: Final = "device_token"
 CONF_ACCESS_TOKEN: Final = "access_token"
 CONF_REFRESH_TOKEN: Final = "refresh_token"
+CONF_RETAILER_CUSTOMER_ID: Final = "retailer_customer_id"
 CONF_UPDATE_INTERVAL_MINUTES: Final = "update_interval_minutes"
-CONF_ENABLE_CHECKOUT: Final = "enable_checkout"
-
-DEFAULT_ENABLE_CHECKOUT: Final = False
 
 SERVICE_ADD_TO_CART: Final = "add_to_cart"
 SERVICE_SET_CART_QUANTITY: Final = "set_cart_quantity"

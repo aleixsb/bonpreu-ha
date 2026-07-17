@@ -27,13 +27,12 @@ from .const import (
     CONF_CALLBACK_URL,
     CONF_DEVICE_ID,
     CONF_DEVICE_TOKEN,
-    CONF_ENABLE_CHECKOUT,
     CONF_REDIRECT_URI,
     CONF_REFRESH_TOKEN,
+    CONF_RETAILER_CUSTOMER_ID,
     CONF_UPDATE_INTERVAL_MINUTES,
     CONF_USE_ALTERNATIVE_MOBILE,
     CONF_USE_MOBILE_REDIRECT,
-    DEFAULT_ENABLE_CHECKOUT,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     REDIRECT_URI,
@@ -56,6 +55,49 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._use_alternative_mobile: bool = False
         self._attempted_authorization_codes: set[str] = set()
         self._title: str = "Bonpreu"
+        self._reauth_entry: config_entries.ConfigEntry | None = None
+
+    async def async_step_reauth(self, entry_data: dict[str, str]):
+        """Start reauthentication flow for an existing entry."""
+        del entry_data
+
+        entry_id = self.context.get("entry_id")
+        if not isinstance(entry_id, str):
+            return self.async_abort(reason="invalid_auth_state")
+
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            return self.async_abort(reason="invalid_auth_state")
+
+        self._reauth_entry = entry
+        self._title = entry.title
+        self._device_id = entry.data.get(CONF_DEVICE_ID) or str(uuid.uuid4())
+        self._device_token = entry.data.get(CONF_DEVICE_TOKEN)
+        self._redirect_uri = entry.data.get(CONF_REDIRECT_URI, REDIRECT_URI)
+        self._use_alternative_mobile = bool(entry.data.get(CONF_USE_ALTERNATIVE_MOBILE, False))
+        self._attempted_authorization_codes.clear()
+
+        session = async_get_clientsession(self.hass)
+        client = BonpreuApiClient(session, language=self.hass.config.language or "es")
+
+        try:
+            if not self._device_token:
+                self._device_token = await client.ensure_device_token(self._device_id)
+            client.set_device_token(self._device_token)
+            uris = await client.get_oauth_uris(
+                use_alternative_mobile=self._use_alternative_mobile,
+            )
+        except BonpreuApiError as err:
+            _LOGGER.error("Could not prepare Bonpreu reauth flow: %s", err)
+            return self.async_abort(reason="cannot_connect")
+
+        self._oauth_state = uris.state
+        self._authorization_url = append_query_parameter(
+            uris.authentication_uri,
+            "redirect_uri",
+            self._redirect_uri,
+        )
+        return await self.async_step_callback()
 
     async def async_step_user(self, user_input: dict | None = None):
         """First step: prepare OAuth URL."""
@@ -162,6 +204,28 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         _LOGGER.error("Authorization code exchange failed: %s", err)
                         errors["base"] = "auth_retry_requires_new_login"
                     else:
+                        client.set_tokens(
+                            access_token=token_pair.access_token,
+                            refresh_token=token_pair.refresh_token,
+                        )
+
+                        retailer_customer_id = ""
+                        try:
+                            profile = await client.get_user_current()
+                        except BonpreuApiError as err:
+                            _LOGGER.debug("Could not fetch customer profile after login: %s", err)
+                        else:
+                            retailer_customer_id = str(
+                                profile.get("retailerCustomerId")
+                                or profile.get("customerId")
+                                or profile.get("id")
+                                or ""
+                            ).strip()
+
+                        if retailer_customer_id and self._reauth_entry is None:
+                            await self.async_set_unique_id(f"bonpreu_{retailer_customer_id}")
+                            self._abort_if_unique_id_configured()
+
                         data = {
                             CONF_ACCESS_TOKEN: token_pair.access_token,
                             CONF_REFRESH_TOKEN: token_pair.refresh_token,
@@ -171,6 +235,21 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_USE_ALTERNATIVE_MOBILE: self._use_alternative_mobile,
                             CONF_USE_MOBILE_REDIRECT: True,
                         }
+                        if retailer_customer_id:
+                            data[CONF_RETAILER_CUSTOMER_ID] = retailer_customer_id
+
+                        if self._reauth_entry is not None:
+                            updated_data = {
+                                **self._reauth_entry.data,
+                                **data,
+                            }
+                            self.hass.config_entries.async_update_entry(
+                                self._reauth_entry,
+                                data=updated_data,
+                            )
+                            await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
+                            return self.async_abort(reason="reauth_successful")
+
                         return self.async_create_entry(title=self._title, data=data)
 
         return self._show_callback_form(errors)
@@ -236,10 +315,6 @@ class BonpreuOptionsFlow(config_entries.OptionsFlow):
             CONF_UPDATE_INTERVAL_MINUTES,
             int(DEFAULT_UPDATE_INTERVAL.total_seconds() / 60),
         )
-        current_checkout = self._config_entry.options.get(
-            CONF_ENABLE_CHECKOUT,
-            DEFAULT_ENABLE_CHECKOUT,
-        )
 
         schema = vol.Schema(
             {
@@ -247,7 +322,6 @@ class BonpreuOptionsFlow(config_entries.OptionsFlow):
                     CONF_UPDATE_INTERVAL_MINUTES,
                     default=current_interval,
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
-                vol.Optional(CONF_ENABLE_CHECKOUT, default=current_checkout): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
