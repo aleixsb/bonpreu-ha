@@ -50,6 +50,7 @@ async def async_get_config_entry_diagnostics(
         "orders_waiting_shipment_count": BonpreuDataUpdateCoordinator.parse_orders_waiting_shipment_count(data),
         "active_orders_count": BonpreuDataUpdateCoordinator.parse_active_orders_count(data),
         "regular_products_count": BonpreuDataUpdateCoordinator.parse_regulars_count(data),
+        "catalog_search_products_count": BonpreuDataUpdateCoordinator.parse_catalog_search_products_count(data),
         "endpoint_status": endpoint_status,
     }
 
@@ -63,6 +64,8 @@ async def async_get_config_entry_diagnostics(
             "recent_orders": _describe_payload_shape(data.get("recent_orders")),
             "orders_not_cancelled_count": _describe_payload_shape(data.get("orders_not_cancelled_count")),
             "regulars": _describe_payload_shape(data.get("regulars")),
+            "catalog_search": _describe_payload_shape(data.get("catalog_search")),
+            "catalog_product_detail": _describe_payload_shape(data.get("catalog_product_detail")),
         },
     }
 

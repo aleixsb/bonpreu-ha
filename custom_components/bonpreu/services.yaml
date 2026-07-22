@@ -165,3 +165,61 @@ delete_shopping_list:
       required: true
       selector:
         text:
+
+search_catalog_products:
+  name: Search Catalog Products
+  description: Search Bonpreu catalog and cache latest search payload for diagnostics.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    query:
+      required: true
+      example: "llet"
+      selector:
+        text:
+    max_page_size:
+      required: false
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+    page_token:
+      required: false
+      selector:
+        text:
+    category_id:
+      required: false
+      selector:
+        text:
+    encoded_filters:
+      required: false
+      example: "offer%3Atrue"
+      selector:
+        text:
+    sort_option_id:
+      required: false
+      selector:
+        text:
+    include_additional_page_info:
+      required: false
+      default: true
+      selector:
+        boolean:
+
+get_catalog_product_detail:
+  name: Get Catalog Product Detail
+  description: Fetch detailed product payload and cache latest detail payload for diagnostics.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    retailer_product_id:
+      required: true
+      example: "49637"
+      selector:
+        text:

@@ -12,14 +12,20 @@ from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    ATTR_CATEGORY_ID,
+    ATTR_ENCODED_FILTERS,
     ATTR_QUERY,
+    ATTR_INCLUDE_ADDITIONAL_PAGE_INFO,
     ATTR_QUANTITY,
     ATTR_DELTA,
     ATTR_ENTRY_ID,
     ATTR_LIST_ID,
     ATTR_LIST_NAME,
+    ATTR_MAX_PAGE_SIZE,
+    ATTR_PAGE_TOKEN,
     ATTR_PRODUCTS,
     ATTR_RETAILER_PRODUCT_ID,
+    ATTR_SORT_OPTION_ID,
     ATTR_TARGET_QUANTITY,
     DOMAIN,
     SERVICE_ADD_SHOPPING_LIST_TO_CART,
@@ -28,8 +34,10 @@ from .const import (
     SERVICE_ADD_REGULAR_BY_ID_TO_CART,
     SERVICE_CREATE_SHOPPING_LIST,
     SERVICE_DELETE_SHOPPING_LIST,
+    SERVICE_GET_CATALOG_PRODUCT_DETAIL,
     SERVICE_REMOVE_FROM_CART,
     SERVICE_RENAME_SHOPPING_LIST,
+    SERVICE_SEARCH_CATALOG_PRODUCTS,
     SERVICE_SET_CART_QUANTITY,
 )
 from .runtime import BonpreuRuntimeData
@@ -143,6 +151,24 @@ _ADD_REGULAR_BY_ID_TO_CART_SCHEMA = _BASE_SCHEMA.extend(
     }
 )
 
+_SEARCH_CATALOG_PRODUCTS_SCHEMA = _BASE_SCHEMA.extend(
+    {
+        vol.Required(ATTR_QUERY): _validate_non_empty_string,
+        vol.Optional(ATTR_MAX_PAGE_SIZE, default=30): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+        vol.Optional(ATTR_PAGE_TOKEN): _validate_non_empty_string,
+        vol.Optional(ATTR_CATEGORY_ID): _validate_non_empty_string,
+        vol.Optional(ATTR_ENCODED_FILTERS): _validate_non_empty_string,
+        vol.Optional(ATTR_SORT_OPTION_ID): _validate_non_empty_string,
+        vol.Optional(ATTR_INCLUDE_ADDITIONAL_PAGE_INFO, default=True): cv.boolean,
+    }
+)
+
+_CATALOG_PRODUCT_DETAIL_SCHEMA = _BASE_SCHEMA.extend(
+    {
+        vol.Required(ATTR_RETAILER_PRODUCT_ID): _validate_non_empty_string,
+    }
+)
+
 
 _SERVICE_NAMES: tuple[str, ...] = (
     SERVICE_ADD_TO_CART,
@@ -154,6 +180,8 @@ _SERVICE_NAMES: tuple[str, ...] = (
     SERVICE_CREATE_SHOPPING_LIST,
     SERVICE_RENAME_SHOPPING_LIST,
     SERVICE_DELETE_SHOPPING_LIST,
+    SERVICE_SEARCH_CATALOG_PRODUCTS,
+    SERVICE_GET_CATALOG_PRODUCT_DETAIL,
 )
 
 
@@ -264,6 +292,22 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime = _resolve_runtime(hass, call)
         await runtime.coordinator.async_delete_shopping_list(call.data[ATTR_LIST_ID])
 
+    async def _handle_search_catalog_products(call: ServiceCall) -> None:
+        runtime = _resolve_runtime(hass, call)
+        await runtime.coordinator.async_search_catalog_products(
+            query=call.data[ATTR_QUERY],
+            max_page_size=call.data[ATTR_MAX_PAGE_SIZE],
+            page_token=call.data.get(ATTR_PAGE_TOKEN),
+            category_id=call.data.get(ATTR_CATEGORY_ID),
+            encoded_filters=call.data.get(ATTR_ENCODED_FILTERS),
+            sort_option_id=call.data.get(ATTR_SORT_OPTION_ID),
+            include_additional_page_info=call.data[ATTR_INCLUDE_ADDITIONAL_PAGE_INFO],
+        )
+
+    async def _handle_get_catalog_product_detail(call: ServiceCall) -> None:
+        runtime = _resolve_runtime(hass, call)
+        await runtime.coordinator.async_get_catalog_product_detail(call.data[ATTR_RETAILER_PRODUCT_ID])
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_ADD_TO_CART,
@@ -317,6 +361,18 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_DELETE_SHOPPING_LIST,
         _handle_delete_list,
         schema=_LIST_ID_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEARCH_CATALOG_PRODUCTS,
+        _handle_search_catalog_products,
+        schema=_SEARCH_CATALOG_PRODUCTS_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_CATALOG_PRODUCT_DETAIL,
+        _handle_get_catalog_product_detail,
+        schema=_CATALOG_PRODUCT_DETAIL_SCHEMA,
     )
 
     hass.data[_SERVICE_MARKER] = True

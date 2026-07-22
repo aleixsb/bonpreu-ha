@@ -125,6 +125,8 @@ class _FakeClient:
         self.cart_view_payload: dict[str, Any] = {}
         self.product_detail_payloads: dict[str, dict[str, Any]] = {}
         self.product_detail_calls: list[str] = []
+        self.search_payload: dict[str, Any] = {"productGroups": []}
+        self.search_calls: list[dict[str, Any]] = []
 
     async def get_cart_active(self) -> dict[str, Any]:
         self.get_cart_calls += 1
@@ -141,6 +143,10 @@ class _FakeClient:
         if payload is None:
             raise BonpreuApiError("not found", status_code=404)
         return payload
+
+    async def search_products(self, **kwargs: Any) -> dict[str, Any]:
+        self.search_calls.append(dict(kwargs))
+        return self.search_payload
 
     async def get_cart_view(self) -> dict[str, Any]:
         return self.cart_view_payload
@@ -320,6 +326,79 @@ class CoordinatorCartTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["delta"], -2)
         self.assertEqual(self.client.add_calls, [("12345", -2)])
         self.assertGreaterEqual(self.client.get_cart_calls, 2)
+
+    async def test_catalog_search_populates_cache_for_cart_enrichment(self) -> None:
+        self.client.search_payload = {
+            "productGroups": [
+                {
+                    "products": [
+                        {
+                            "productId": "outer-product",
+                            "retailerProductId": "49999",
+                            "product": {
+                                "productId": "inner-product",
+                                "description": "Semi Skimmed Milk",
+                                "brand": "BONPREU",
+                            },
+                        }
+                    ]
+                }
+            ]
+        }
+
+        payload = await self.coordinator.async_search_catalog_products(query="milk", max_page_size=5)
+
+        self.assertIn("catalog_search", self.coordinator.data)
+        self.assertEqual(payload, self.coordinator.data["catalog_search"])
+        self.assertEqual(self.client.search_calls[0]["query"], "milk")
+
+        self.client.raise_products_error = True
+        self.client.products_error_status_code = 500
+        self.client.cart_payload = {
+            "items": [
+                {
+                    "productId": "inner-product",
+                    "retailerProductId": "49999",
+                    "quantity": 1,
+                }
+            ]
+        }
+
+        enriched = await self.coordinator._fetch_cart_with_products()
+        self.assertEqual(enriched["items"][0].get("name"), "Semi Skimmed Milk")
+
+    async def test_catalog_product_detail_populates_cache_for_cart_enrichment(self) -> None:
+        self.client.product_detail_payloads = {
+            "48888": {
+                "product": {
+                    "productId": "detail-product",
+                    "retailerProductId": "48888",
+                    "description": "Fresh Pasta",
+                    "brand": "BONPREU",
+                }
+            }
+        }
+
+        payload = await self.coordinator.async_get_catalog_product_detail("48888")
+
+        self.assertIn("catalog_product_detail", self.coordinator.data)
+        self.assertEqual(payload, self.coordinator.data["catalog_product_detail"])
+        self.assertEqual(self.client.product_detail_calls, ["48888"])
+
+        self.client.raise_products_error = True
+        self.client.products_error_status_code = 500
+        self.client.cart_payload = {
+            "items": [
+                {
+                    "productId": "detail-product",
+                    "retailerProductId": "48888",
+                    "quantity": 1,
+                }
+            ]
+        }
+
+        enriched = await self.coordinator._fetch_cart_with_products()
+        self.assertEqual(enriched["items"][0].get("name"), "Fresh Pasta")
 
 
 if __name__ == "__main__":

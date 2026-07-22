@@ -48,6 +48,15 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._product_cache_by_product_id: dict[str, dict[str, Any]] = {}
         self._product_cache_by_retailer_id: dict[str, dict[str, Any]] = {}
 
+    def _remember_product(self, product: dict[str, Any]) -> None:
+        """Persist product payload in in-memory lookups."""
+        product_id = str(product.get("productId") or "").strip()
+        retailer_product_id = str(product.get("retailerProductId") or "").strip()
+        if product_id:
+            self._product_cache_by_product_id[product_id] = product
+        if retailer_product_id:
+            self._product_cache_by_retailer_id[retailer_product_id] = product
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Bonpreu API."""
         previous = self.data or {}
@@ -133,10 +142,9 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             retailer_product_id = str(product.get("retailerProductId") or "").strip()
             if product_id:
                 by_product_id[product_id] = product
-                self._product_cache_by_product_id[product_id] = product
             if retailer_product_id:
                 by_retailer_id[retailer_product_id] = product
-                self._product_cache_by_retailer_id[retailer_product_id] = product
+            self._remember_product(product)
 
         for item in item_dicts:
             product_id = str(item.get("productId") or "").strip()
@@ -180,6 +188,41 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         products = await asyncio.gather(*(_fetch_one(product_id) for product_id in retailer_product_ids))
         return [product for product in products if isinstance(product, dict)]
+
+    async def async_search_catalog_products(
+        self,
+        *,
+        query: str,
+        max_page_size: int = 30,
+        page_token: str | None = None,
+        category_id: str | None = None,
+        encoded_filters: str | None = None,
+        sort_option_id: str | None = None,
+        include_additional_page_info: bool = True,
+    ) -> dict[str, Any]:
+        """Search products and cache returned product metadata."""
+        payload = await self.client.search_products(
+            query=query,
+            max_page_size=max_page_size,
+            page_token=page_token,
+            category_id=category_id,
+            encoded_filters=encoded_filters,
+            sort_option_id=sort_option_id,
+            include_additional_page_info=include_additional_page_info,
+        )
+        for product in _extract_products_from_search_payload(payload):
+            self._remember_product(product)
+        self._set_endpoint_data("catalog_search", payload)
+        return payload
+
+    async def async_get_catalog_product_detail(self, retailer_product_id: str) -> dict[str, Any]:
+        """Fetch product detail and cache returned product metadata."""
+        payload = await self.client.get_product_detail(retailer_product_id)
+        product = _extract_product_from_detail_payload(payload, retailer_product_id)
+        if isinstance(product, dict):
+            self._remember_product(product)
+        self._set_endpoint_data("catalog_product_detail", payload)
+        return payload
 
     def _set_endpoint_data(self, key: str, value: Any) -> None:
         """Update a single endpoint payload in coordinator cache."""
@@ -385,6 +428,13 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     @staticmethod
+    def parse_catalog_search_products_count(data: dict[str, Any]) -> int:
+        payload = data.get("catalog_search")
+        if not isinstance(payload, dict):
+            return 0
+        return len(_extract_products_from_search_payload(payload))
+
+    @staticmethod
     def parse_cart_items_preview(data: dict[str, Any], *, limit: int = 15) -> list[dict[str, Any]]:
         return _extract_cart_items(data.get("cart"))[:limit]
 
@@ -567,6 +617,51 @@ def _extract_product_from_detail_payload(payload: Any, retailer_product_id: str)
     if not has_identifier:
         return None
     return normalized
+
+
+def _extract_products_from_search_payload(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+
+    products: list[dict[str, Any]] = []
+
+    groups = payload.get("productGroups")
+    if isinstance(groups, list):
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            for key in ("products", "decoratedProducts"):
+                values = group.get(key)
+                if not isinstance(values, list):
+                    continue
+                for item in values:
+                    if isinstance(item, dict):
+                        products.append(_unwrap_nested_product(item))
+        if products:
+            return products
+
+    for key in ("products", "items", "data", "content"):
+        values = payload.get(key)
+        if not isinstance(values, list):
+            continue
+        return [_unwrap_nested_product(item) for item in values if isinstance(item, dict)]
+
+    return []
+
+
+def _unwrap_nested_product(product: dict[str, Any]) -> dict[str, Any]:
+    nested = product.get("product")
+    if not isinstance(nested, dict):
+        return product
+
+    merged = dict(nested)
+    for key in ("productId", "retailerProductId", "id", "sku"):
+        if merged.get(key):
+            continue
+        value = product.get(key)
+        if value is not None:
+            merged[key] = value
+    return merged
 
 
 def _cart_quantity_for_product(cart_payload: Any, retailer_product_id: str) -> int:
