@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import unittest
+from typing import Any
 
 
 def _install_homeassistant_stubs() -> None:
@@ -77,7 +79,34 @@ def _install_aiohttp_stubs() -> None:
 _install_homeassistant_stubs()
 _install_aiohttp_stubs()
 
-from custom_components.bonpreu.api.client import _parse_products_payload, normalize_api_language
+from custom_components.bonpreu.api.client import (
+    BonpreuApiClient,
+    _parse_products_payload,
+    normalize_api_language,
+)
+from custom_components.bonpreu.api.exceptions import BonpreuApiError
+
+
+class _FakeBonpreuApiClient(BonpreuApiClient):
+    def __init__(self, *, outcomes: list[Any]) -> None:
+        super().__init__(session=object(), language="ca-ES")
+        self.outcomes = list(outcomes)
+        self.calls: list[dict[str, Any]] = []
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        self.calls.append(
+            {
+                "method": method,
+                "path": path,
+                "kwargs": kwargs,
+            }
+        )
+        if not self.outcomes:
+            raise AssertionError("No fake outcome left for request.")
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 class ParseProductsPayloadTests(unittest.TestCase):
@@ -101,6 +130,70 @@ class ParseProductsPayloadTests(unittest.TestCase):
         }
         parsed = _parse_products_payload(payload)
         self.assertEqual([item["productId"] for item in parsed], ["4", "5"])
+
+    def test_parses_grouped_products_with_nested_product(self) -> None:
+        payload = {
+            "productGroups": [
+                {
+                    "products": [
+                        {
+                            "productId": "outer-1",
+                            "retailerProductId": "rp-1",
+                            "product": {
+                                "productId": "inner-1",
+                                "name": "Coffee",
+                            },
+                        }
+                    ]
+                }
+            ]
+        }
+        parsed = _parse_products_payload(payload)
+        self.assertEqual(parsed[0]["productId"], "inner-1")
+        self.assertEqual(parsed[0]["retailerProductId"], "rp-1")
+        self.assertEqual(parsed[0]["name"], "Coffee")
+
+
+class ApiClientCatalogMethodsTests(unittest.TestCase):
+    def test_search_products_preserves_encoded_filters(self) -> None:
+        client = _FakeBonpreuApiClient(outcomes=[{"productGroups": []}])
+
+        payload = asyncio.run(
+            client.search_products(
+                query="llet entera",
+                screen_size="S",
+                max_products_to_decorate=100,
+                max_page_size=30,
+                include_additional_page_info=True,
+                encoded_filters="offer%3Atrue",
+                category_id="cat-1",
+                page_token="next token",
+            )
+        )
+
+        self.assertEqual(payload, {"productGroups": []})
+        self.assertEqual(client.calls[0]["method"], "GET")
+        path = str(client.calls[0]["path"])
+        self.assertIn("q=llet%20entera", path)
+        self.assertIn("filters=offer%3Atrue", path)
+        self.assertIn("categoryId=cat-1", path)
+        self.assertIn("pageToken=next%20token", path)
+
+    def test_search_products_requires_dict_response(self) -> None:
+        client = _FakeBonpreuApiClient(outcomes=[["invalid"]])
+        with self.assertRaises(BonpreuApiError):
+            asyncio.run(client.search_products(query="llet"))
+
+    def test_get_product_detail_encodes_retailer_product_id(self) -> None:
+        client = _FakeBonpreuApiClient(outcomes=[{"product": {"productId": "p-1"}}])
+        payload = asyncio.run(client.get_product_detail("abc/123"))
+        self.assertEqual(payload, {"product": {"productId": "p-1"}})
+        self.assertEqual(client.calls[0]["path"], "v2/products/abc%2F123/bop")
+
+    def test_get_product_detail_requires_dict_response(self) -> None:
+        client = _FakeBonpreuApiClient(outcomes=["invalid"])
+        with self.assertRaises(BonpreuApiError):
+            asyncio.run(client.get_product_detail("123"))
 
 
 class NormalizeApiLanguageTests(unittest.TestCase):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import urllib.parse
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -383,6 +384,49 @@ class BonpreuApiClient:
             params={"showProductLimit": limit, "productListOffset": offset},
         )
 
+    async def search_products(
+        self,
+        *,
+        query: str,
+        screen_size: str = "S",
+        max_products_to_decorate: int = 100,
+        max_page_size: int = 100,
+        include_additional_page_info: bool = True,
+        sort_option_id: str | None = None,
+        encoded_filters: str | None = None,
+        category_id: str | None = None,
+        page_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Search catalog products using mobile endpoint semantics."""
+        query_parts: list[str] = [
+            f"q={urllib.parse.quote(query, safe='')}",
+            f"screenSize={urllib.parse.quote(screen_size, safe='')}",
+            f"maxProductsToDecorate={max_products_to_decorate}",
+            f"maxPageSize={max_page_size}",
+            f"includeAdditionalPageInfo={'true' if include_additional_page_info else 'false'}",
+        ]
+        if sort_option_id:
+            query_parts.append(f"sortOptionId={urllib.parse.quote(sort_option_id, safe='')}")
+        if encoded_filters:
+            query_parts.append(f"filters={encoded_filters}")
+        if category_id:
+            query_parts.append(f"categoryId={urllib.parse.quote(category_id, safe='')}")
+        if page_token:
+            query_parts.append(f"pageToken={urllib.parse.quote(page_token, safe='')}")
+
+        data = await self._request("GET", f"v4/products/search?{'&'.join(query_parts)}")
+        if not isinstance(data, dict):
+            raise BonpreuApiError("Invalid search response for v4/products/search.")
+        return data
+
+    async def get_product_detail(self, retailer_product_id: str) -> dict[str, Any]:
+        """Get detailed product payload for a retailer product id."""
+        encoded_id = urllib.parse.quote(retailer_product_id, safe="")
+        data = await self._request("GET", f"v2/products/{encoded_id}/bop")
+        if not isinstance(data, dict):
+            raise BonpreuApiError("Invalid product detail response for v2/products/<id>/bop.")
+        return data
+
     async def get_user_current(self) -> dict[str, Any]:
         """Get authenticated customer profile."""
         data = await self._request("GET", "v1/user/current")
@@ -442,14 +486,14 @@ def _build_http_error_message(status: int, path: str, body: str) -> str:
 def _parse_products_payload(payload: Any) -> list[dict[str, Any]]:
     """Parse product list payload across known response envelopes."""
     if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
+        return [_unwrap_product_payload(item) for item in payload if isinstance(item, dict)]
 
     if not isinstance(payload, dict):
         return []
 
     direct_products = payload.get("products")
     if isinstance(direct_products, list):
-        return [item for item in direct_products if isinstance(item, dict)]
+        return [_unwrap_product_payload(item) for item in direct_products if isinstance(item, dict)]
 
     product_groups = payload.get("productGroups")
     if isinstance(product_groups, list):
@@ -460,13 +504,28 @@ def _parse_products_payload(payload: Any) -> list[dict[str, Any]]:
             for key in ("products", "decoratedProducts"):
                 values = group.get(key)
                 if isinstance(values, list):
-                    flattened.extend(item for item in values if isinstance(item, dict))
+                    flattened.extend(_unwrap_product_payload(item) for item in values if isinstance(item, dict))
         if flattened:
             return flattened
 
     for key in ("items", "data", "content"):
         values = payload.get(key)
         if isinstance(values, list):
-            return [item for item in values if isinstance(item, dict)]
+            return [_unwrap_product_payload(item) for item in values if isinstance(item, dict)]
 
     return []
+
+
+def _unwrap_product_payload(product: dict[str, Any]) -> dict[str, Any]:
+    nested = product.get("product")
+    if not isinstance(nested, dict):
+        return product
+
+    merged = dict(nested)
+    for key in ("productId", "retailerProductId", "id", "sku"):
+        if merged.get(key):
+            continue
+        value = product.get(key)
+        if value is not None:
+            merged[key] = value
+    return merged
