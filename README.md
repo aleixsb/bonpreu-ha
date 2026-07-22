@@ -129,3 +129,27 @@ Authorization codes are one-time use. If token exchange fails, run login again a
 - Do not share callback URLs: they contain short-lived login credentials.
 - Do not store Bonpreu credentials directly in `configuration.yaml`; use `!secret` references.
 - Endpoint failures are handled independently; sensors expose a `stale` attribute when an endpoint refresh fails and previous data is being reused.
+
+## Local development workflow (without HACS)
+
+For auth and catalog iteration outside Home Assistant, use the local probes in `tools/`.
+
+Auth probe (OTP-capable, persisted transactions):
+
+```bash
+python3 tools/bonpreu_auth_probe.py credentials store --username "you@example.com" --password "your-password"
+python3 tools/bonpreu_auth_probe.py start
+python3 tools/bonpreu_auth_probe.py resume --transaction-id "<id>" --otp "123456"
+```
+
+Catalog probe (reuses local session, includes auth verify/search/product detail):
+
+```bash
+python3 tools/bonpreu_catalog_probe.py auth login
+python3 tools/bonpreu_catalog_probe.py auth status
+python3 tools/bonpreu_catalog_probe.py auth verify
+python3 tools/bonpreu_catalog_probe.py catalog search "llet" --max-page-size 30
+python3 tools/bonpreu_catalog_probe.py catalog product "<retailer_product_id>"
+```
+
+Both tools store local state under `~/.bonpreu-auth-probe/` with private permissions.
