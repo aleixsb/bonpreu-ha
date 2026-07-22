@@ -47,6 +47,7 @@ _install_homeassistant_stubs()
 
 from custom_components.bonpreu.api.auth import (
     is_expected_callback_url,
+    is_intermediate_callback_url,
     parse_callback_query,
     parse_callback_url,
     states_match,
@@ -63,12 +64,9 @@ class AuthHelpersTests(unittest.TestCase):
         self.assertEqual(parsed.state, "abc123")
         self.assertEqual(parsed.code, "auth-code")
 
-    def test_parse_expected_https_callback(self) -> None:
-        callback = "https://ha.example.com/api/bonpreu/oauth/nonce123?state=foo&code=bar"
-        parsed = parse_callback_url(
-            callback,
-            expected_redirect_uri="https://ha.example.com/api/bonpreu/oauth/nonce123",
-        )
+    def test_parse_expected_mobile_callback(self) -> None:
+        callback = "bonpreu-atm://login?state=foo&code=bar"
+        parsed = parse_callback_url(callback)
         self.assertEqual(parsed.state, "foo")
         self.assertEqual(parsed.code, "bar")
 
@@ -105,11 +103,18 @@ class AuthHelpersTests(unittest.TestCase):
             )
         )
 
-    def test_expected_callback_url_rejects_wrong_port(self) -> None:
+    def test_expected_callback_url_rejects_wrong_scheme(self) -> None:
         self.assertFalse(
             is_expected_callback_url(
-                "https://ha.example.com:8443/api/bonpreu/oauth/n",
-                expected_redirect_uri="https://ha.example.com/api/bonpreu/oauth/n",
+                "https://login?state=s&code=c",
+                expected_redirect_uri="bonpreu-atm://login",
+            )
+        )
+
+    def test_intermediate_callback_url_matcher(self) -> None:
+        self.assertTrue(
+            is_intermediate_callback_url(
+                "https://www.compraonline.bonpreuesclat.cat/sso-login?state=s&code=c"
             )
         )
 

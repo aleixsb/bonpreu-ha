@@ -9,8 +9,7 @@
     "error": {
       "cannot_connect": "No se puede conectar con la API de Bonpreu.",
       "invalid_callback_url": "La URL de callback no es valida.",
-      "intermediate_callback_url": "Parece una URL web intermedia. Abre en el navegador la URL que acaba en /sso-login/auth y copia la URL callback final bonpreu-atm://login.",
-      "no_ha_url": "No hay URL externa de Home Assistant disponible. Se usara el pegado manual de callback.",
+      "intermediate_callback_url": "Parece una URL web intermedia. Completa el login en el navegador y copia la URL completa /sso-login desde la barra de direcciones.",
       "state_mismatch": "El estado OAuth no coincide.",
       "auth_declined": "El login fue cancelado o rechazado por Bonpreu.",
       "auth_retry_requires_new_login": "No se pudo completar el intercambio de tokens. Repite la URL de login para generar una nueva URL callback.",
@@ -19,7 +18,7 @@
     "step": {
       "user": {
         "title": "Preparar login",
-        "description": "Esta integracion usa login OAuth asistido.",
+        "description": "Esta integracion usa login OAuth movil de Bonpreu.",
         "data": {
           "title": "Nombre de la entrada",
           "use_alternative_mobile": "Usar URI OAuth movil alternativa"
@@ -27,9 +26,9 @@
       },
       "callback": {
         "title": "Callback de login",
-        "description": "Abre esta URL en el navegador e inicia sesion:\n\n{authorization_url}\n\nTras el login, Home Assistant deberia recibir el callback automaticamente. Si no ocurre, pega la URL callback abajo. Redirect URI actual: {redirect_uri}. Los codigos de autorizacion son de un solo uso; si falla el intercambio, reinicia el login para obtener una URL callback nueva.",
+        "description": "Abre esta URL en el navegador e inicia sesion:\n\n{authorization_url}\n\nTras el login, copia la URL completa de la barra de direcciones del navegador y pegala abajo. Formatos soportados: https://www.compraonline.bonpreuesclat.cat/sso-login?... o bonpreu-atm://login?... Redirect URI usada para el intercambio de tokens: {redirect_uri}. Los codigos de autorizacion son de un solo uso; si falla el intercambio, reinicia el login para obtener una URL callback nueva.",
         "data": {
-          "callback_url": "URL callback (modo manual)"
+          "callback_url": "URL callback"
         }
       }
     }

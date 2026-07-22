@@ -34,7 +34,7 @@ class BonpreuApiClient:
         self,
         session: aiohttp.ClientSession,
         *,
-        language: str = "es",
+        language: str | None = None,
         access_token: str | None = None,
         refresh_token: str | None = None,
         device_token: str | None = None,
@@ -42,7 +42,7 @@ class BonpreuApiClient:
         on_token_refresh: Callable[[str, str | None], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
-        self._language = language
+        self._language = normalize_api_language(language)
         self._access_token = access_token
         self._refresh_token = refresh_token
         self._device_token = device_token
@@ -375,6 +375,19 @@ class BonpreuApiClient:
 def _looks_json_content_type(content_type: str) -> bool:
     lowered = content_type.lower()
     return "application/json" in lowered or "+json" in lowered
+
+
+def normalize_api_language(language: str | None) -> str:
+    """Normalize Home Assistant language to supported Bonpreu locale."""
+    if not language:
+        return "ca-ES"
+
+    normalized = language.strip().replace("_", "-").lower()
+    if normalized.startswith("ca"):
+        return "ca-ES"
+    if normalized.startswith("es"):
+        return "es-ES"
+    return "ca-ES"
 
 
 def _build_http_error_message(status: int, path: str, body: str) -> str:

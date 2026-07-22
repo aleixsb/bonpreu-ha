@@ -9,8 +9,7 @@
     "error": {
       "cannot_connect": "Cannot connect to Bonpreu API.",
       "invalid_callback_url": "The callback URL is invalid.",
-      "intermediate_callback_url": "This looks like an intermediate web URL. Open the URL ending with /sso-login/auth in your browser and copy the final bonpreu-atm://login callback URL.",
-      "no_ha_url": "Home Assistant external URL is not available. Falling back to manual callback paste.",
+      "intermediate_callback_url": "This looks like an intermediate web URL. Complete login in browser and copy the full /sso-login URL from the address bar.",
       "state_mismatch": "OAuth state does not match.",
       "auth_declined": "Login was cancelled or rejected by Bonpreu.",
       "auth_retry_requires_new_login": "Could not finish token exchange. Repeat the login URL to generate a new callback URL.",
@@ -19,7 +18,7 @@
     "step": {
       "user": {
         "title": "Prepare login",
-        "description": "This integration uses assisted OAuth login.",
+        "description": "This integration uses Bonpreu mobile OAuth login.",
         "data": {
           "title": "Entry name",
           "use_alternative_mobile": "Use alternative mobile OAuth URI"
@@ -27,9 +26,9 @@
       },
       "callback": {
         "title": "Login callback",
-        "description": "Open this URL in browser and log in:\n\n{authorization_url}\n\nAfter login, Home Assistant should receive the callback automatically. If that does not happen, paste the callback URL below. Current redirect URI: {redirect_uri}. Authorization codes are one-time use; if exchange fails, restart login to get a fresh callback URL.",
+        "description": "Open this URL in browser and log in:\n\n{authorization_url}\n\nAfter login, copy the full URL from the browser address bar and paste it below. Supported callback formats: https://www.compraonline.bonpreuesclat.cat/sso-login?... or bonpreu-atm://login?... Redirect URI used for token exchange: {redirect_uri}. Authorization codes are one-time use; if exchange fails, restart login to get a fresh callback URL.",
         "data": {
-          "callback_url": "Callback URL (manual fallback)"
+          "callback_url": "Callback URL"
         }
       }
     }

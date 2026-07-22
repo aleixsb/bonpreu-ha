@@ -77,7 +77,7 @@ def _install_aiohttp_stubs() -> None:
 _install_homeassistant_stubs()
 _install_aiohttp_stubs()
 
-from custom_components.bonpreu.api.client import _parse_products_payload
+from custom_components.bonpreu.api.client import _parse_products_payload, normalize_api_language
 
 
 class ParseProductsPayloadTests(unittest.TestCase):
@@ -101,6 +101,20 @@ class ParseProductsPayloadTests(unittest.TestCase):
         }
         parsed = _parse_products_payload(payload)
         self.assertEqual([item["productId"] for item in parsed], ["4", "5"])
+
+
+class NormalizeApiLanguageTests(unittest.TestCase):
+    def test_catalan_languages_map_to_ca_es(self) -> None:
+        self.assertEqual(normalize_api_language("ca"), "ca-ES")
+        self.assertEqual(normalize_api_language("ca_ES"), "ca-ES")
+
+    def test_spanish_languages_map_to_es_es(self) -> None:
+        self.assertEqual(normalize_api_language("es"), "es-ES")
+        self.assertEqual(normalize_api_language("es-MX"), "es-ES")
+
+    def test_unsupported_languages_fallback_to_ca_es(self) -> None:
+        self.assertEqual(normalize_api_language("en"), "ca-ES")
+        self.assertEqual(normalize_api_language(None), "ca-ES")
 
 
 if __name__ == "__main__":

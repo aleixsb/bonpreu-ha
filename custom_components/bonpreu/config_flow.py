@@ -14,7 +14,6 @@ import homeassistant.helpers.config_validation as cv
 
 from .api.auth import (
     append_query_parameter,
-    is_expected_callback_url,
     is_intermediate_callback_url,
     parse_callback_query,
     parse_callback_url,
@@ -37,10 +36,6 @@ from .const import (
     DOMAIN,
     REDIRECT_URI,
 )
-from .oauth_callback import (
-    async_register_oauth_callback_view,
-    async_try_build_flow_callback_url,
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +51,6 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._device_id: str | None = None
         self._device_token: str | None = None
         self._redirect_uri: str = REDIRECT_URI
-        self._mobile_redirect_uri: str = REDIRECT_URI
         self._use_alternative_mobile: bool = False
         self._attempted_authorization_codes: set[str] = set()
         self._title: str = "Bonpreu"
@@ -84,9 +78,7 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         errors = await self._async_prepare_authorization_url(reuse_device=True)
         if errors:
-            if errors.get("base") != "no_ha_url":
-                return self.async_abort(reason="cannot_connect")
-            return self._show_callback_form(errors)
+            return self.async_abort(reason="cannot_connect")
 
         return await self.async_step_callback()
 
@@ -105,8 +97,6 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 return await self.async_step_callback()
-            if errors.get("base") == "no_ha_url" and self._authorization_url:
-                return self._show_callback_form(errors)
 
         schema = vol.Schema(
             {
@@ -131,7 +121,6 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             callback_url = str(user_input[CONF_CALLBACK_URL]).strip()
-            matched_redirect_uri: str | None = None
 
             if is_intermediate_callback_url(callback_url):
                 try:
@@ -139,32 +128,17 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except BonpreuConfigError:
                     errors["base"] = "invalid_callback_url"
                     return self._show_callback_form(errors)
-            elif is_expected_callback_url(callback_url, expected_redirect_uri=self._redirect_uri):
-                matched_redirect_uri = self._redirect_uri
-                try:
-                    params = parse_callback_url(callback_url, expected_redirect_uri=self._redirect_uri)
-                except BonpreuConfigError:
-                    errors["base"] = "invalid_callback_url"
-                    return self._show_callback_form(errors)
-            elif is_expected_callback_url(callback_url, expected_redirect_uri=self._mobile_redirect_uri):
-                matched_redirect_uri = self._mobile_redirect_uri
+            else:
                 try:
                     params = parse_callback_url(
                         callback_url,
-                        expected_redirect_uri=self._mobile_redirect_uri,
+                        expected_redirect_uri=self._redirect_uri,
                     )
                 except BonpreuConfigError:
                     errors["base"] = "invalid_callback_url"
                     return self._show_callback_form(errors)
-            else:
-                errors["base"] = "invalid_callback_url"
-                return self._show_callback_form(errors)
 
-            redirect_uri_for_exchange = self._matching_redirect_uri(
-                params.state,
-                preferred_redirect_uri=matched_redirect_uri,
-            )
-            if redirect_uri_for_exchange is None:
+            if not states_match(self._oauth_state, params.state, expected_redirect_uri=self._redirect_uri):
                 errors["base"] = "state_mismatch"
             elif params.error:
                 errors["base"] = "auth_declined"
@@ -183,7 +157,7 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     token_pair = await client.exchange_authorization_code(
                         params.code,
-                        redirect_uri_for_exchange,
+                        self._redirect_uri,
                     )
                 except BonpreuApiError as err:
                     _LOGGER.error("Authorization code exchange failed: %s", err)
@@ -269,12 +243,6 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         session = async_get_clientsession(self.hass)
         client = BonpreuApiClient(session, language=self.hass.config.language or "es")
 
-        try:
-            async_register_oauth_callback_view(self.hass)
-        except RuntimeError:
-            errors["base"] = "cannot_connect"
-            return errors
-
         if not reuse_device or not self._device_id:
             self._device_id = str(uuid.uuid4())
             self._device_token = None
@@ -298,46 +266,13 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return errors
 
         self._oauth_state = uris.state
-
-        callback_redirect_uri = async_try_build_flow_callback_url(self.hass, self.flow_id)
-        if callback_redirect_uri is None:
-            self._redirect_uri = self._mobile_redirect_uri
-            self._authorization_url = append_query_parameter(
-                uris.authentication_uri,
-                "redirect_uri",
-                self._redirect_uri,
-            )
-            errors["base"] = "no_ha_url"
-            return errors
-
-        self._redirect_uri = callback_redirect_uri
+        self._redirect_uri = REDIRECT_URI
         self._authorization_url = append_query_parameter(
             uris.authentication_uri,
             "redirect_uri",
             self._redirect_uri,
         )
         return errors
-
-    def _matching_redirect_uri(
-        self,
-        received_state: str,
-        *,
-        preferred_redirect_uri: str | None = None,
-    ) -> str | None:
-        """Return redirect URI matching wrapped OAuth state."""
-        candidates: list[str] = []
-        for candidate in (preferred_redirect_uri, self._redirect_uri, self._mobile_redirect_uri):
-            if candidate and candidate not in candidates:
-                candidates.append(candidate)
-
-        for candidate in candidates:
-            if states_match(
-                self._oauth_state,
-                received_state,
-                expected_redirect_uri=candidate,
-            ):
-                return candidate
-        return None
 
     @staticmethod
     @callback
