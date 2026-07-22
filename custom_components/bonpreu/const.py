@@ -20,6 +20,12 @@ HEADER_SOURCE_VERSION: Final = "home-assistant"
 
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=5)
 DEFAULT_TIMEOUT_SECONDS: Final = 20
+OAUTH_CALLBACK_PATH: Final = "/api/bonpreu/oauth"
+OAUTH_CALLBACK_TTL_SECONDS: Final = 900
+
+DATA_OAUTH_PENDING: Final = "oauth_pending_callbacks"
+DATA_OAUTH_VIEW_REGISTERED: Final = "oauth_callback_view_registered"
+DATA_OAUTH: Final = "bonpreu_oauth"
 
 CONF_CALLBACK_URL: Final = "callback_url"
 CONF_USE_ALTERNATIVE_MOBILE: Final = "use_alternative_mobile"

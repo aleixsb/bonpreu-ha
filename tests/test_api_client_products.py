@@ -44,9 +44,9 @@ def _install_homeassistant_stubs() -> None:
 
 def _install_aiohttp_stubs() -> None:
     if "aiohttp" in sys.modules:
-        return
-
-    aiohttp = types.ModuleType("aiohttp")
+        aiohttp = sys.modules["aiohttp"]
+    else:
+        aiohttp = types.ModuleType("aiohttp")
 
     class ClientError(Exception):
         pass
@@ -61,6 +61,16 @@ def _install_aiohttp_stubs() -> None:
     aiohttp.ClientError = ClientError
     aiohttp.ClientTimeout = ClientTimeout
     aiohttp.ClientSession = ClientSession
+
+    if not hasattr(aiohttp, "web"):
+        class Response:
+            def __init__(self, text: str = "", status: int = 200, content_type: str | None = None) -> None:
+                self.text = text
+                self.status = status
+                self.content_type = content_type
+
+        aiohttp.web = types.SimpleNamespace(Response=Response, Request=object)
+
     sys.modules["aiohttp"] = aiohttp
 
 

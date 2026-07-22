@@ -28,14 +28,27 @@ def append_query_parameter(url: str, key: str, value: str) -> str:
     return urlunparse(parts._replace(query=urlencode(query, doseq=True)))
 
 
-def is_mobile_callback_url(callback_url: str, expected_redirect_uri: str = REDIRECT_URI) -> bool:
-    """Check if callback URL targets the expected Bonpreu mobile redirect URI."""
+def is_expected_callback_url(callback_url: str, expected_redirect_uri: str = REDIRECT_URI) -> bool:
+    """Check whether callback URL matches expected redirect URI origin/path."""
     parsed_callback = urlparse(callback_url)
     expected = urlparse(expected_redirect_uri)
 
-    if parsed_callback.scheme != expected.scheme:
+    if parsed_callback.scheme.lower() != expected.scheme.lower():
         return False
-    if parsed_callback.netloc != expected.netloc:
+
+    callback_host = (parsed_callback.hostname or "").lower()
+    expected_host = (expected.hostname or "").lower()
+    if callback_host != expected_host:
+        return False
+
+    callback_port = parsed_callback.port
+    expected_port = expected.port
+    callback_default_port = 443 if parsed_callback.scheme.lower() == "https" else 80
+    expected_default_port = 443 if expected.scheme.lower() == "https" else 80
+    if (callback_port or callback_default_port) != (expected_port or expected_default_port):
+        return False
+
+    if (parsed_callback.username or parsed_callback.password) and not (expected.username or expected.password):
         return False
 
     callback_path = parsed_callback.path or ""
@@ -44,6 +57,11 @@ def is_mobile_callback_url(callback_url: str, expected_redirect_uri: str = REDIR
         return False
 
     return True
+
+
+def is_mobile_callback_url(callback_url: str, expected_redirect_uri: str = REDIRECT_URI) -> bool:
+    """Backward-compatible mobile callback matcher."""
+    return is_expected_callback_url(callback_url, expected_redirect_uri=expected_redirect_uri)
 
 
 def is_intermediate_callback_url(callback_url: str) -> bool:
@@ -61,9 +79,14 @@ def parse_callback_url(callback_url: str, expected_redirect_uri: str = REDIRECT_
 
     Accepts only the expected Bonpreu mobile callback URI.
     """
-    if not is_mobile_callback_url(callback_url, expected_redirect_uri=expected_redirect_uri):
+    if not is_expected_callback_url(callback_url, expected_redirect_uri=expected_redirect_uri):
         raise BonpreuConfigError("Unexpected callback URI.")
 
+    return parse_callback_query(callback_url)
+
+
+def parse_callback_query(callback_url: str) -> CallbackParams:
+    """Parse callback query parameters without validating callback host."""
     parsed = urlparse(callback_url)
     query = parse_qs(parsed.query, keep_blank_values=True)
 
@@ -95,18 +118,14 @@ def states_match(expected_state: str, received_state: str, expected_redirect_uri
     Bonpreu may return states like:
     ``mobile_<base64 redirect uri>_<base64 expected_state>_<uuid>``
     """
-    if secrets.compare_digest(received_state, expected_state):
+    if _constant_time_equals(received_state, expected_state):
         return True
 
-    parsed_state = _parse_wrapped_mobile_state(received_state)
-    if parsed_state is None:
-        return False
-
-    wrapped_redirect_uri, wrapped_state = parsed_state
-    if not secrets.compare_digest(wrapped_redirect_uri, expected_redirect_uri):
-        return False
-
-    return secrets.compare_digest(wrapped_state, expected_state)
+    return _matches_wrapped_mobile_state(
+        received_state,
+        expected_redirect_uri=expected_redirect_uri,
+        expected_state=expected_state,
+    )
 
 
 def _read_single_query_parameter(query: dict[str, list[str]], key: str) -> str | None:
@@ -119,40 +138,46 @@ def _read_single_query_parameter(query: dict[str, list[str]], key: str) -> str |
     return value or None
 
 
-def _parse_wrapped_mobile_state(received_state: str) -> tuple[str, str] | None:
+def _matches_wrapped_mobile_state(
+    received_state: str,
+    *,
+    expected_redirect_uri: str,
+    expected_state: str,
+) -> bool:
     if not received_state.startswith("mobile_"):
-        return None
+        return False
 
-    chunks = received_state.split("_")
-    if len(chunks) != 4:
-        return None
-
-    _, encoded_redirect_uri, encoded_state, encoded_uuid = chunks
-    if not encoded_redirect_uri or not encoded_state or not encoded_uuid:
-        return None
-
-    wrapped_redirect_uri = _try_b64_decode(encoded_redirect_uri)
-    wrapped_state = _try_b64_decode(encoded_state)
-    wrapped_uuid = _try_b64_decode(encoded_uuid)
-    if not wrapped_redirect_uri or not wrapped_state or not wrapped_uuid:
-        return None
+    try:
+        wrapped_prefix, wrapped_uuid = received_state.rsplit("_", 1)
+    except ValueError:
+        return False
 
     try:
         uuid.UUID(wrapped_uuid)
     except ValueError:
-        return None
+        return False
 
-    return wrapped_redirect_uri, wrapped_state
+    expected_prefixes: set[str] = set()
+    for encoded_redirect_uri in _base64_variants(expected_redirect_uri):
+        for encoded_state in _base64_variants(expected_state):
+            expected_prefixes.add(f"mobile_{encoded_redirect_uri}_{encoded_state}")
+
+    return any(_constant_time_equals(wrapped_prefix, prefix) for prefix in expected_prefixes)
 
 
-def _try_b64_decode(value: str) -> str | None:
-    padding = "=" * ((4 - len(value) % 4) % 4)
-    candidate = value + padding
+def _base64_variants(value: str) -> set[str]:
+    raw = value.encode("utf-8")
+    standard = base64.b64encode(raw).decode("utf-8")
+    urlsafe = base64.urlsafe_b64encode(raw).decode("utf-8")
 
-    for decoder in (base64.urlsafe_b64decode, base64.b64decode):
-        try:
-            decoded = decoder(candidate.encode("utf-8"))
-            return decoded.decode("utf-8")
-        except Exception:
-            continue
-    return None
+    variants = {
+        standard,
+        urlsafe,
+        standard.rstrip("="),
+        urlsafe.rstrip("="),
+    }
+    return {variant for variant in variants if variant}
+
+
+def _constant_time_equals(left: str, right: str) -> bool:
+    return secrets.compare_digest(left.encode("utf-8"), right.encode("utf-8"))

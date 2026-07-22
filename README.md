@@ -74,14 +74,19 @@ The companion dashboard cards are published separately:
 
 1. Integration gives you an authorization URL.
 2. Open it in browser and log in with your Bonpreu account.
-3. If your browser stops at `https://www.compraonline.bonpreuesclat.cat/sso-login?...`, replace it with `/sso-login/auth?...` to reach the app callback URL.
-4. Copy the full callback URL (`bonpreu-atm://login?...`).
-5. Paste callback URL into the config flow.
+3. After login, Home Assistant should receive the callback automatically and finish setup.
+4. If auto-callback does not complete, paste the callback URL manually in the form.
 
-Authorization codes are one-time use. If token exchange fails, run login again and paste a fresh callback URL.
+Manual fallback accepts either:
+
+- `https://www.compraonline.bonpreuesclat.cat/sso-login?...`
+- the final callback URL (`bonpreu-atm://login?...` or the generated Home Assistant callback URL)
+
+Authorization codes are one-time use. If token exchange fails, run login again and use a fresh callback URL.
 
 ## Notes
 
 - This API is private and undocumented; endpoints can change without notice.
 - Do not share callback URLs: they contain short-lived login credentials.
+- Automatic callback capture requires a configured external HTTPS Home Assistant URL.
 - Endpoint failures are handled independently; sensors expose a `stale` attribute when an endpoint refresh fails and previous data is being reused.

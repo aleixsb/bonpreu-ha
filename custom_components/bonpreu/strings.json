@@ -3,12 +3,14 @@
   "config": {
     "abort": {
       "invalid_auth_state": "Authentication state was not initialized. Start again.",
-      "reauth_successful": "Reauthentication completed successfully."
+      "reauth_successful": "Reauthentication completed successfully.",
+      "reauth_account_mismatch": "Reauthentication used a different Bonpreu account. Please sign in with the original account."
     },
     "error": {
       "cannot_connect": "Cannot connect to Bonpreu API.",
       "invalid_callback_url": "The callback URL is invalid.",
       "intermediate_callback_url": "This looks like an intermediate web URL. Open the URL ending with /sso-login/auth in your browser and copy the final bonpreu-atm://login callback URL.",
+      "no_ha_url": "Home Assistant external URL is not available. Falling back to manual callback paste.",
       "state_mismatch": "OAuth state does not match.",
       "auth_declined": "Login was cancelled or rejected by Bonpreu.",
       "auth_retry_requires_new_login": "Could not finish token exchange. Repeat the login URL to generate a new callback URL.",
@@ -24,10 +26,10 @@
         }
       },
       "callback": {
-        "title": "Paste callback URL",
-        "description": "Open this URL in browser and log in:\n\n{authorization_url}\n\nAfter login, copy the full callback URL (redirect URI: {redirect_uri}) and paste it below. Authorization codes are one-time use; if exchange fails, restart login to get a fresh callback URL.",
+        "title": "Login callback",
+        "description": "Open this URL in browser and log in:\n\n{authorization_url}\n\nAfter login, Home Assistant should receive the callback automatically. If that does not happen, paste the callback URL below. Current redirect URI: {redirect_uri}. Authorization codes are one-time use; if exchange fails, restart login to get a fresh callback URL.",
         "data": {
-          "callback_url": "Callback URL"
+          "callback_url": "Callback URL (manual fallback)"
         }
       }
     }

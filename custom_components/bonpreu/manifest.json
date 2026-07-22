@@ -1,10 +1,13 @@
 {
   "domain": "bonpreu",
   "name": "Bonpreu",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "documentation": "https://github.com/aleixsb/bonpreu-ha",
   "issue_tracker": "https://github.com/aleixsb/bonpreu-ha/issues",
   "config_flow": true,
+  "dependencies": [
+    "http"
+  ],
   "iot_class": "cloud_polling",
   "codeowners": [
     "@aleixsb"
