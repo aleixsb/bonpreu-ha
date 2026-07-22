@@ -26,7 +26,7 @@ _INTERMEDIATE_PATHS = frozenset({"/sso-login", "/sso-login/auth"})
 _MOBILE_CALLBACK_SCHEME = "bonpreu-atm"
 _MOBILE_CALLBACK_PATH = "/login"
 
-_MAX_FLOW_STEPS = 20
+_MAX_FLOW_STEPS = 25
 _MAX_HTML_BYTES = 600_000
 _FLOW_TTL_SECONDS = 600
 
@@ -193,7 +193,13 @@ def select_email_code_form(forms: list[ParsedHTMLForm]) -> EmailCodeForm | None:
             allowed_types={"text", "email", "tel", "number"},
         )
         if not code_field:
-            code_field = _first_visible_text_field(form)
+            fallback_candidates = [
+                name
+                for name, field_type in form.field_types.items()
+                if field_type in {"text", "email", "tel", "number"}
+            ]
+            if len(fallback_candidates) == 1:
+                code_field = fallback_candidates[0]
         if not code_field:
             continue
 
@@ -205,6 +211,12 @@ def extract_callback_url_from_location(current_url: str, location: str) -> str |
     """Resolve redirect location and return callback URL when oauth params are present."""
     resolved = urljoin(current_url, location)
     return extract_callback_url(resolved)
+
+
+def extract_mobile_callback_url_from_location(current_url: str, location: str) -> str | None:
+    """Resolve redirect location and return only mobile callback when recognized."""
+    resolved = urljoin(current_url, location)
+    return extract_mobile_callback_url(resolved)
 
 
 def extract_callback_url(candidate_url: str) -> str | None:
@@ -228,6 +240,26 @@ def extract_callback_url(candidate_url: str) -> str | None:
     if parsed.scheme == "https" and parsed.hostname == _INTERMEDIATE_HOST and parsed.path in _INTERMEDIATE_PATHS:
         return candidate_url
 
+    return None
+
+
+def extract_mobile_callback_url(candidate_url: str) -> str | None:
+    """Return callback URL only for mobile callback target with state+(code|error)."""
+    parsed = urlparse(candidate_url)
+    query = parse_query_preserving_plus(parsed.query)
+    state = _read_query_value(query, "state")
+    code = _read_query_value(query, "code")
+    oauth_error = _read_query_value(query, "error")
+
+    if not state or (not code and not oauth_error):
+        return None
+
+    is_mobile_callback = parsed.scheme == _MOBILE_CALLBACK_SCHEME and (
+        parsed.path == _MOBILE_CALLBACK_PATH
+        or (parsed.netloc == "login" and parsed.path in {"", "/"})
+    )
+    if is_mobile_callback:
+        return candidate_url
     return None
 
 
@@ -303,13 +335,17 @@ class BonpreuCredentialLoginTransaction:
             )
             _collect_redirect_uri_candidates(response_url, self._observed_redirect_uris)
 
-            callback_url = extract_callback_url(response_url)
+            callback_url = extract_mobile_callback_url(response_url)
             if callback_url:
                 return self._build_progress(callback_url=callback_url)
 
             if location:
                 resolved_redirect = urljoin(response_url, location)
                 _collect_redirect_uri_candidates(resolved_redirect, self._observed_redirect_uris)
+                callback_url = extract_mobile_callback_url_from_location(response_url, location)
+                if callback_url:
+                    return self._build_progress(callback_url=callback_url)
+
                 callback_url = extract_callback_url_from_location(response_url, location)
                 if callback_url:
                     if is_intermediate_callback_url(callback_url):
@@ -389,13 +425,17 @@ class BonpreuCredentialLoginTransaction:
             )
             _collect_redirect_uri_candidates(response_url, self._observed_redirect_uris)
 
-            callback_url = extract_callback_url(response_url)
+            callback_url = extract_mobile_callback_url(response_url)
             if callback_url:
                 return self._build_progress(callback_url=callback_url)
 
             if location:
                 resolved_redirect = urljoin(response_url, location)
                 _collect_redirect_uri_candidates(resolved_redirect, self._observed_redirect_uris)
+                callback_url = extract_mobile_callback_url_from_location(response_url, location)
+                if callback_url:
+                    return self._build_progress(callback_url=callback_url)
+
                 callback_url = extract_callback_url_from_location(response_url, location)
                 if callback_url:
                     if is_intermediate_callback_url(callback_url):

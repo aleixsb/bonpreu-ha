@@ -350,7 +350,8 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     profile = await client.get_user_current()
                 except BonpreuApiError as err:
-                    _LOGGER.debug("Could not fetch customer profile after login: %s", err)
+                    _LOGGER.error("Could not verify customer profile after login: %s", err)
+                    errors["base"] = "auth_retry_requires_new_login"
                 else:
                     retailer_customer_id = str(
                         profile.get("retailerCustomerId")
@@ -358,6 +359,9 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         or profile.get("id")
                         or ""
                     ).strip()
+
+                if errors:
+                    return self._show_callback_form(errors)
 
                 if retailer_customer_id and self._reauth_entry is None:
                     await self.async_set_unique_id(f"bonpreu_{retailer_customer_id}")

@@ -228,18 +228,50 @@ class BonpreuApiClient:
 
     async def exchange_authorization_code(self, code: str, redirect_uri: str) -> TokenPair:
         """Exchange OAuth authorization code for access/refresh token."""
+        if not self._device_token:
+            raise BonpreuAuthError("Device token missing.")
+
         payload = {
             "authorizationCode": code,
             "redirectUri": redirect_uri,
         }
-        data = await self._request(
-            "POST",
-            "v1/authorize",
-            require_auth=False,
-            headers=self._device_auth_headers(),
-            json=payload,
-        )
-        return TokenPair(access_token=data["token"], refresh_token=data.get("refreshToken"))
+        auth_candidates = [
+            format_auth_header_value(self._device_token),
+            f"token:{self._device_token}",
+        ]
+        unique_auth_candidates = list(dict.fromkeys(auth_candidates))
+
+        data: dict[str, Any] | None = None
+        last_error: BonpreuApiError | None = None
+        for auth_header in unique_auth_candidates:
+            try:
+                candidate = await self._request(
+                    "POST",
+                    "v1/authorize",
+                    require_auth=False,
+                    headers={"Authorization": auth_header},
+                    json=payload,
+                )
+            except BonpreuApiError as err:
+                last_error = err
+                continue
+
+            if not isinstance(candidate, dict):
+                raise BonpreuApiError("Invalid JSON response for v1/authorize.")
+            data = candidate
+            break
+
+        if data is None:
+            if last_error is not None:
+                raise last_error
+            raise BonpreuApiError("Token exchange failed for v1/authorize.")
+
+        access_token = str(data.get("token") or "").strip()
+        if not access_token:
+            raise BonpreuApiError("Token exchange did not return access token.")
+
+        refresh_token = str(data.get("refreshToken") or "").strip() or None
+        return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
     async def get_device_token(self, device_id: str) -> str | None:
         """Get API device token for a generated device ID."""
@@ -399,7 +431,7 @@ def _build_http_error_message(status: int, path: str, body: str) -> str:
         return message
 
     if isinstance(parsed, dict):
-        for key in ("reason", "error", "code"):
+        for key in ("reason", "error", "code", "message"):
             value = parsed.get(key)
             if isinstance(value, str) and value.strip():
                 return f"{message}: {value.strip()}"
