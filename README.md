@@ -70,11 +70,43 @@ The companion dashboard cards are published separately:
 
 [![Open Bonpreu Cards in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=aleixsb&repository=bonpreu-cards&category=dashboard)
 
+## Optional YAML credentials (recommended)
+
+To automate login and reauthentication, configure Bonpreu credentials in YAML using Home Assistant secrets:
+
+`secrets.yaml`:
+
+```yaml
+bonpreu_username: your_email@example.com
+bonpreu_password: your_password
+```
+
+`configuration.yaml`:
+
+```yaml
+bonpreu:
+  username: !secret bonpreu_username
+  password: !secret bonpreu_password
+```
+
+After changing YAML or secrets, restart Home Assistant.
+
 ## Login flow
 
-1. Integration gives you an authorization URL.
+### Automated flow (when YAML credentials are configured)
+
+1. Add the integration from Settings -> Devices & services.
+2. Integration starts login automatically using configured credentials.
+3. Enter the email verification code when prompted.
+4. Setup finishes without manual callback copy.
+
+### Manual fallback flow
+
+If automated login is unavailable (captcha/challenge/form changes), use manual callback mode:
+
+1. Integration shows an authorization URL.
 2. Open it in browser and log in with your Bonpreu account.
-3. After login, copy the full URL from the browser address bar.
+3. Copy the full URL from the browser address bar.
 4. Paste that URL in the integration form to finish setup.
 
 Accepted callback formats:
@@ -88,4 +120,5 @@ Authorization codes are one-time use. If token exchange fails, run login again a
 
 - This API is private and undocumented; endpoints can change without notice.
 - Do not share callback URLs: they contain short-lived login credentials.
+- Do not store Bonpreu credentials directly in `configuration.yaml`; use `!secret` references.
 - Endpoint failures are handled independently; sensors expose a `stale` attribute when an endpoint refresh fails and previous data is being reused.

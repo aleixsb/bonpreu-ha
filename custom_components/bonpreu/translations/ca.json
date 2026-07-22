@@ -10,6 +10,11 @@
       "cannot_connect": "No es pot connectar amb l'API de Bonpreu.",
       "invalid_callback_url": "La URL de callback no es valida.",
       "intermediate_callback_url": "Aixo sembla una URL web intermedia. Completa el login al navegador i copia la URL completa /sso-login des de la barra d'adreces.",
+      "credentials_not_configured": "Les credencials de Bonpreu no estan configurades a configuration.yaml. El mode manual de callback continua disponible.",
+      "invalid_credentials": "L'usuari o la contrasenya configurats per Bonpreu han estat rebutjats.",
+      "invalid_email_code": "El codi de verificacio no es valid o ha caducat.",
+      "automated_login_unavailable": "El login automatic amb credencials no esta disponible ara. Fes servir el mode manual de callback.",
+      "automated_session_expired": "La sessio de login automatic ha caducat. Reinicia el login o fes servir el mode manual de callback.",
       "state_mismatch": "L'estat OAuth no coincideix.",
       "auth_declined": "El login s'ha cancel.lat o rebutjat per Bonpreu.",
       "auth_retry_requires_new_login": "No s'ha pogut completar l'intercanvi de tokens. Repeteix la URL de login per generar una URL callback nova.",
@@ -18,15 +23,22 @@
     "step": {
       "user": {
         "title": "Preparar login",
-        "description": "Aquesta integracio fa servir login OAuth mobil de Bonpreu.",
+        "description": "Aquesta integracio fa servir login OAuth mobil de Bonpreu. Si configures usuari i contrasenya a configuration.yaml, el login i la reautenticacio s'automatitzen i nomes es demanara el codi de verificacio per correu.",
         "data": {
           "title": "Nom de l'entrada",
           "use_alternative_mobile": "Fer servir URI OAuth mobil alternativa"
         }
       },
+      "email_code": {
+        "title": "Verificacio per correu",
+        "description": "Bonpreu ha enviat un codi de verificacio al teu correu. Introdueix-lo a sota per acabar el login. Si aquest pas falla per pagines de desafiament, fes servir el mode manual amb aquesta URL:\n\n{authorization_url}",
+        "data": {
+          "email_code": "Codi de verificacio"
+        }
+      },
       "callback": {
         "title": "Callback de login",
-        "description": "Obre aquesta URL al navegador i inicia sessio:\n\n{authorization_url}\n\nDespres del login, copia la URL completa de la barra d'adreces del navegador i enganxa-la a sota. Formats suportats: https://www.compraonline.bonpreuesclat.cat/sso-login?... o bonpreu-atm://login?... Redirect URI usada per a l'intercanvi de tokens: {redirect_uri}. Els codis d'autoritzacio son d'un sol us; si falla l'intercanvi, reinicia el login per obtenir una URL callback nova.",
+        "description": "Mode manual de suport. Obre aquesta URL al navegador i inicia sessio:\n\n{authorization_url}\n\nDespres del login, copia la URL completa de la barra d'adreces del navegador i enganxa-la a sota. Formats suportats: https://www.compraonline.bonpreuesclat.cat/sso-login?... o bonpreu-atm://login?... Redirect URI usada per a l'intercanvi de tokens: {redirect_uri}. Els codis d'autoritzacio son d'un sol us; si falla l'intercanvi, reinicia el login per obtenir una URL callback nova.",
         "data": {
           "callback_url": "URL callback"
         }

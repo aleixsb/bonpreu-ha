@@ -7,6 +7,8 @@ from typing import Final
 
 DOMAIN: Final = "bonpreu"
 
+DATA_STATIC_CREDENTIALS: Final = "static_credentials"
+
 BASE_URL: Final = "https://api.bpe.osp.tech/rocket-osp/"
 REDIRECT_URI: Final = "bonpreu-atm://login"
 
@@ -22,6 +24,9 @@ DEFAULT_UPDATE_INTERVAL = timedelta(minutes=5)
 DEFAULT_TIMEOUT_SECONDS: Final = 20
 
 CONF_CALLBACK_URL: Final = "callback_url"
+CONF_EMAIL_CODE: Final = "email_code"
+CONF_USERNAME: Final = "username"
+CONF_PASSWORD: Final = "password"
 CONF_USE_ALTERNATIVE_MOBILE: Final = "use_alternative_mobile"
 CONF_USE_MOBILE_REDIRECT: Final = "use_mobile_redirect"
 CONF_REDIRECT_URI: Final = "redirect_uri"

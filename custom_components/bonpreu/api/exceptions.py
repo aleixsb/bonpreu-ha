@@ -21,3 +21,31 @@ class BonpreuAuthError(BonpreuApiError):
 
 class BonpreuConfigError(BonpreuError):
     """Raised for configuration-flow errors."""
+
+
+class BonpreuLoginError(BonpreuConfigError):
+    """Raised for credential-based login flow failures."""
+
+
+class BonpreuCredentialConfigError(BonpreuLoginError):
+    """Raised when YAML credentials are missing or invalid."""
+
+
+class BonpreuInvalidCredentialsError(BonpreuLoginError):
+    """Raised when username/password were rejected."""
+
+
+class BonpreuInvalidEmailCodeError(BonpreuLoginError):
+    """Raised when the email verification code is invalid."""
+
+
+class BonpreuLoginChallengeError(BonpreuLoginError):
+    """Raised when login requires browser-only challenges (captcha/waf)."""
+
+
+class BonpreuLoginFormError(BonpreuLoginError):
+    """Raised when expected login forms cannot be parsed."""
+
+
+class BonpreuLoginExpiredError(BonpreuLoginError):
+    """Raised when credential login transaction expires."""

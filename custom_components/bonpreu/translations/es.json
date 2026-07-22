@@ -10,6 +10,11 @@
       "cannot_connect": "No se puede conectar con la API de Bonpreu.",
       "invalid_callback_url": "La URL de callback no es valida.",
       "intermediate_callback_url": "Parece una URL web intermedia. Completa el login en el navegador y copia la URL completa /sso-login desde la barra de direcciones.",
+      "credentials_not_configured": "Las credenciales de Bonpreu no estan configuradas en configuration.yaml. El modo manual de callback sigue disponible.",
+      "invalid_credentials": "El usuario o la contrasena configurados para Bonpreu fueron rechazados.",
+      "invalid_email_code": "El codigo de verificacion no es valido o ha caducado.",
+      "automated_login_unavailable": "El login automatico con credenciales no esta disponible ahora. Usa el modo manual de callback.",
+      "automated_session_expired": "La sesion de login automatico ha caducado. Reinicia el login o usa el modo manual de callback.",
       "state_mismatch": "El estado OAuth no coincide.",
       "auth_declined": "El login fue cancelado o rechazado por Bonpreu.",
       "auth_retry_requires_new_login": "No se pudo completar el intercambio de tokens. Repite la URL de login para generar una nueva URL callback.",
@@ -18,15 +23,22 @@
     "step": {
       "user": {
         "title": "Preparar login",
-        "description": "Esta integracion usa login OAuth movil de Bonpreu.",
+        "description": "Esta integracion usa login OAuth movil de Bonpreu. Si defines usuario y contrasena en configuration.yaml, el login y la reautenticacion se automatizan y solo se pedira el codigo de verificacion por email.",
         "data": {
           "title": "Nombre de la entrada",
           "use_alternative_mobile": "Usar URI OAuth movil alternativa"
         }
       },
+      "email_code": {
+        "title": "Verificacion por email",
+        "description": "Bonpreu ha enviado un codigo de verificacion a tu correo. Introducelo abajo para terminar el login. Si este paso falla por paginas de desafio, usa el modo manual con esta URL:\n\n{authorization_url}",
+        "data": {
+          "email_code": "Codigo de verificacion"
+        }
+      },
       "callback": {
         "title": "Callback de login",
-        "description": "Abre esta URL en el navegador e inicia sesion:\n\n{authorization_url}\n\nTras el login, copia la URL completa de la barra de direcciones del navegador y pegala abajo. Formatos soportados: https://www.compraonline.bonpreuesclat.cat/sso-login?... o bonpreu-atm://login?... Redirect URI usada para el intercambio de tokens: {redirect_uri}. Los codigos de autorizacion son de un solo uso; si falla el intercambio, reinicia el login para obtener una URL callback nueva.",
+        "description": "Modo manual de respaldo. Abre esta URL en el navegador e inicia sesion:\n\n{authorization_url}\n\nTras el login, copia la URL completa de la barra de direcciones del navegador y pegala abajo. Formatos soportados: https://www.compraonline.bonpreuesclat.cat/sso-login?... o bonpreu-atm://login?... Redirect URI usada para el intercambio de tokens: {redirect_uri}. Los codigos de autorizacion son de un solo uso; si falla el intercambio, reinicia el login para obtener una URL callback nueva.",
         "data": {
           "callback_url": "URL callback"
         }

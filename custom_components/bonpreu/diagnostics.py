@@ -12,8 +12,10 @@ from .const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
     CONF_DEVICE_TOKEN,
+    CONF_PASSWORD,
     CONF_REFRESH_TOKEN,
     CONF_RETAILER_CUSTOMER_ID,
+    CONF_USERNAME,
     DOMAIN,
 )
 from .coordinator import BonpreuDataUpdateCoordinator
@@ -25,6 +27,8 @@ TO_REDACT = {
     CONF_DEVICE_TOKEN,
     CONF_DEVICE_ID,
     CONF_RETAILER_CUSTOMER_ID,
+    CONF_USERNAME,
+    CONF_PASSWORD,
 }
 
 
