@@ -14,6 +14,9 @@ import homeassistant.helpers.config_validation as cv
 
 from .api.auth import (
     append_query_parameter,
+    callback_redirect_uri_candidate,
+    expand_redirect_candidate_variants,
+    infer_redirect_candidates_from_state,
     is_intermediate_callback_url,
     parse_callback_query,
     parse_callback_url,
@@ -65,6 +68,7 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._redirect_uri: str = REDIRECT_URI
         self._use_alternative_mobile: bool = False
         self._attempted_authorization_codes: set[str] = set()
+        self._observed_redirect_uris: list[str] = []
         self._title: str = "Bonpreu"
         self._reauth_entry: config_entries.ConfigEntry | None = None
         self._credential_login: BonpreuCredentialLoginTransaction | None = None
@@ -88,6 +92,7 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._redirect_uri = REDIRECT_URI
         self._use_alternative_mobile = bool(entry.data.get(CONF_USE_ALTERNATIVE_MOBILE, False))
         self._attempted_authorization_codes.clear()
+        self._observed_redirect_uris = []
 
         errors = await self._async_prepare_authorization_url(reuse_device=True)
         if errors:
@@ -110,6 +115,7 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._device_id = None
             self._device_token = None
             self._attempted_authorization_codes.clear()
+            self._observed_redirect_uris = []
             errors = await self._async_prepare_authorization_url(reuse_device=False)
 
             if not errors:
@@ -148,6 +154,7 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except (BonpreuLoginChallengeError, BonpreuLoginFormError, BonpreuLoginError):
                     return await self._async_fallback_to_manual({"base": "automated_login_unavailable"})
                 else:
+                    self._observed_redirect_uris = list(progress.observed_redirect_uris)
                     if progress.callback_url:
                         await self._async_close_credential_login()
                         return await self._async_process_callback_url(progress.callback_url)
@@ -227,9 +234,11 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self._async_fallback_to_manual({"base": "automated_login_unavailable"})
 
         if progress.email_code_required:
+            self._observed_redirect_uris = list(progress.observed_redirect_uris)
             return self._show_email_code_form({})
 
         if progress.callback_url:
+            self._observed_redirect_uris = list(progress.observed_redirect_uris)
             await self._async_close_credential_login()
             return await self._async_process_callback_url(progress.callback_url)
 
@@ -265,35 +274,71 @@ class BonpreuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except BonpreuConfigError:
                 return self._show_callback_form({"base": "invalid_callback_url"})
 
-        return await self._async_process_callback_params(params)
+        return await self._async_process_callback_params(params, callback_url)
 
-    async def _async_process_callback_params(self, params):
+    async def _async_process_callback_params(self, params, callback_url: str):
         """Exchange callback code and create/update entry."""
         errors: dict[str, str] = {}
+
+        code_candidates: list[str] = []
+        if params.code:
+            code_candidates.append(params.code)
+        if params.raw_code and params.raw_code not in code_candidates:
+            code_candidates.append(params.raw_code)
 
         if not states_match(self._oauth_state or "", params.state, expected_redirect_uri=self._redirect_uri):
             errors["base"] = "state_mismatch"
         elif params.error:
             errors["base"] = "auth_declined"
-        elif not params.code:
+        elif not code_candidates:
             errors["base"] = "invalid_callback_url"
-        elif params.code in self._attempted_authorization_codes:
+        elif any(code in self._attempted_authorization_codes for code in code_candidates):
             errors["base"] = "auth_retry_requires_new_login"
         else:
-            self._attempted_authorization_codes.add(params.code)
+            self._attempted_authorization_codes.update(code_candidates)
+
+            redirect_candidates = infer_redirect_candidates_from_state(
+                expected_state=self._oauth_state or "",
+                received_state=params.state,
+                default_redirect_uri=self._redirect_uri,
+            )
+            callback_candidate = callback_redirect_uri_candidate(callback_url)
+            if callback_candidate and callback_candidate not in redirect_candidates:
+                redirect_candidates.append(callback_candidate)
+            for observed in self._observed_redirect_uris:
+                if observed not in redirect_candidates:
+                    redirect_candidates.append(observed)
+            redirect_candidates = expand_redirect_candidate_variants(redirect_candidates)
+
             session = async_get_clientsession(self.hass)
             client = BonpreuApiClient(
                 session,
                 language=self.hass.config.language or "es",
                 device_token=self._device_token,
             )
-            try:
-                token_pair = await client.exchange_authorization_code(
-                    params.code,
-                    self._redirect_uri,
+
+            token_pair = None
+            last_exchange_error: BonpreuApiError | None = None
+            for code_candidate in code_candidates:
+                for redirect_candidate in redirect_candidates:
+                    try:
+                        token_pair = await client.exchange_authorization_code(
+                            code_candidate,
+                            redirect_candidate,
+                        )
+                    except BonpreuApiError as err:
+                        last_exchange_error = err
+                        continue
+                    break
+                if token_pair is not None:
+                    break
+
+            if token_pair is None:
+                _LOGGER.error(
+                    "Authorization code exchange failed across %s redirect candidates: %s",
+                    len(redirect_candidates),
+                    last_exchange_error or "unknown error",
                 )
-            except BonpreuApiError as err:
-                _LOGGER.error("Authorization code exchange failed: %s", err)
                 errors["base"] = "auth_retry_requires_new_login"
             else:
                 client.set_tokens(

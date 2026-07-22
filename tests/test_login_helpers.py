@@ -39,7 +39,9 @@ _install_aiohttp_stubs()
 from custom_components.bonpreu.api.login import (  # noqa: E402
     extract_callback_url,
     extract_callback_url_from_location,
+    extract_mobile_callback_url_from_html,
     parse_html_forms,
+    promote_intermediate_callback_url,
     select_credentials_form,
     select_email_code_form,
 )
@@ -102,6 +104,20 @@ class LoginHelperTests(unittest.TestCase):
     def test_extract_callback_url_requires_state_and_code_or_error(self) -> None:
         self.assertIsNone(extract_callback_url("bonpreu-atm://login?code=c1"))
         self.assertIsNone(extract_callback_url("bonpreu-atm://login?state=s1"))
+
+    def test_promote_intermediate_callback_url(self) -> None:
+        promoted = promote_intermediate_callback_url(
+            "https://www.compraonline.bonpreuesclat.cat/sso-login?state=s1&code=c1"
+        )
+        self.assertEqual(
+            promoted,
+            "https://www.compraonline.bonpreuesclat.cat/sso-login/auth?state=s1&code=c1",
+        )
+
+    def test_extract_mobile_callback_url_from_html_script(self) -> None:
+        html = '<script>window.location="bonpreu-atm://login?state=s1&code=c1";</script>'
+        callback = extract_mobile_callback_url_from_html(html)
+        self.assertEqual(callback, "bonpreu-atm://login?state=s1&code=c1")
 
 
 if __name__ == "__main__":

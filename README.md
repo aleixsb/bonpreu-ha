@@ -72,7 +72,14 @@ The companion dashboard cards are published separately:
 
 ## Optional YAML credentials (recommended)
 
-To automate login and reauthentication, configure Bonpreu credentials in YAML using Home Assistant secrets:
+To automate login and reauthentication, configure Bonpreu credentials in YAML using Home Assistant secrets.
+
+Credential behavior:
+
+- Credentials are read from YAML on Home Assistant startup.
+- The integration uses them only for the login form step.
+- OTP/email-code verification can still be requested by Bonpreu and is shown in the config flow.
+- If automated login is unavailable (captcha/challenge/flow changes), the integration falls back to manual callback mode.
 
 `secrets.yaml`:
 

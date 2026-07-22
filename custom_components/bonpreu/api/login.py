@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
+import re
 import time
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import aiohttp
 
+from .auth import parse_query_preserving_plus
 from .exceptions import (
     BonpreuInvalidCredentialsError,
     BonpreuInvalidEmailCodeError,
@@ -68,6 +70,7 @@ class LoginProgress:
 
     callback_url: str | None = None
     email_code_required: bool = False
+    observed_redirect_uris: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -207,7 +210,7 @@ def extract_callback_url_from_location(current_url: str, location: str) -> str |
 def extract_callback_url(candidate_url: str) -> str | None:
     """Return callback URL if candidate is supported callback with state/code or state/error."""
     parsed = urlparse(candidate_url)
-    query = parse_qs(parsed.query, keep_blank_values=True)
+    query = parse_query_preserving_plus(parsed.query)
     state = _read_query_value(query, "state")
     code = _read_query_value(query, "code")
     oauth_error = _read_query_value(query, "error")
@@ -238,6 +241,7 @@ class BonpreuCredentialLoginTransaction:
         self._created_at = time.monotonic()
         self._closed = False
         self._pending_email_code: _PendingEmailCodeSubmission | None = None
+        self._observed_redirect_uris: list[str] = []
         self._session = aiohttp.ClientSession(
             cookie_jar=aiohttp.CookieJar(unsafe=False),
             timeout=aiohttp.ClientTimeout(total=25),
@@ -252,6 +256,7 @@ class BonpreuCredentialLoginTransaction:
         """Start credential login from OAuth authorization URL."""
         self._assert_active()
         self._pending_email_code = None
+        self._observed_redirect_uris = []
         return await self._run_credential_phase(start_url=authorization_url)
 
     async def async_submit_email_code(self, email_code: str) -> LoginProgress:
@@ -287,6 +292,7 @@ class BonpreuCredentialLoginTransaction:
         url = start_url
         payload: dict[str, str] | None = None
         submitted_credentials = False
+        attempted_intermediate_auth: set[str] = set()
 
         for _ in range(_MAX_FLOW_STEPS):
             self._assert_active()
@@ -295,15 +301,23 @@ class BonpreuCredentialLoginTransaction:
                 url=url,
                 payload=payload,
             )
+            _collect_redirect_uri_candidates(response_url, self._observed_redirect_uris)
 
             callback_url = extract_callback_url(response_url)
             if callback_url:
-                return LoginProgress(callback_url=callback_url)
+                return self._build_progress(callback_url=callback_url)
 
             if location:
+                resolved_redirect = urljoin(response_url, location)
+                _collect_redirect_uri_candidates(resolved_redirect, self._observed_redirect_uris)
                 callback_url = extract_callback_url_from_location(response_url, location)
                 if callback_url:
-                    return LoginProgress(callback_url=callback_url)
+                    if is_intermediate_callback_url(callback_url):
+                        method = "GET"
+                        url = callback_url
+                        payload = None
+                        continue
+                    return self._build_progress(callback_url=callback_url)
 
                 method = "GET"
                 url = self._resolve_allowed_https_url(response_url, location)
@@ -311,6 +325,22 @@ class BonpreuCredentialLoginTransaction:
                 continue
 
             self._raise_for_browser_challenge(html, response_url)
+
+            promoted_intermediate = promote_intermediate_callback_url(response_url)
+            if promoted_intermediate and promoted_intermediate not in attempted_intermediate_auth:
+                attempted_intermediate_auth.add(promoted_intermediate)
+                method = "GET"
+                url = promoted_intermediate
+                payload = None
+                continue
+
+            callback_url = extract_mobile_callback_url_from_html(html)
+            if callback_url:
+                return self._build_progress(callback_url=callback_url)
+
+            if is_intermediate_callback_url(response_url):
+                return self._build_progress(callback_url=response_url)
+
             forms = parse_html_forms(html, base_url=response_url)
 
             if not submitted_credentials:
@@ -330,7 +360,7 @@ class BonpreuCredentialLoginTransaction:
                     form=email_code_form.form,
                     code_field=email_code_form.code_field,
                 )
-                return LoginProgress(email_code_required=True)
+                return self._build_progress(email_code_required=True)
 
             if submitted_credentials and select_credentials_form(forms) is not None:
                 raise BonpreuInvalidCredentialsError("Bonpreu rejected username or password.")
@@ -349,6 +379,7 @@ class BonpreuCredentialLoginTransaction:
         current_method = method
         current_url = url
         current_payload: dict[str, str] | None = payload
+        attempted_intermediate_auth: set[str] = set()
 
         for _ in range(_MAX_FLOW_STEPS):
             self._assert_active()
@@ -357,15 +388,23 @@ class BonpreuCredentialLoginTransaction:
                 url=current_url,
                 payload=current_payload,
             )
+            _collect_redirect_uri_candidates(response_url, self._observed_redirect_uris)
 
             callback_url = extract_callback_url(response_url)
             if callback_url:
-                return LoginProgress(callback_url=callback_url)
+                return self._build_progress(callback_url=callback_url)
 
             if location:
+                resolved_redirect = urljoin(response_url, location)
+                _collect_redirect_uri_candidates(resolved_redirect, self._observed_redirect_uris)
                 callback_url = extract_callback_url_from_location(response_url, location)
                 if callback_url:
-                    return LoginProgress(callback_url=callback_url)
+                    if is_intermediate_callback_url(callback_url):
+                        current_method = "GET"
+                        current_url = callback_url
+                        current_payload = None
+                        continue
+                    return self._build_progress(callback_url=callback_url)
 
                 current_method = "GET"
                 current_url = self._resolve_allowed_https_url(response_url, location)
@@ -373,6 +412,22 @@ class BonpreuCredentialLoginTransaction:
                 continue
 
             self._raise_for_browser_challenge(html, response_url)
+
+            promoted_intermediate = promote_intermediate_callback_url(response_url)
+            if promoted_intermediate and promoted_intermediate not in attempted_intermediate_auth:
+                attempted_intermediate_auth.add(promoted_intermediate)
+                current_method = "GET"
+                current_url = promoted_intermediate
+                current_payload = None
+                continue
+
+            callback_url = extract_mobile_callback_url_from_html(html)
+            if callback_url:
+                return self._build_progress(callback_url=callback_url)
+
+            if is_intermediate_callback_url(response_url):
+                return self._build_progress(callback_url=response_url)
+
             forms = parse_html_forms(html, base_url=response_url)
 
             email_code_form = select_email_code_form(forms)
@@ -389,6 +444,18 @@ class BonpreuCredentialLoginTransaction:
             raise BonpreuLoginFormError("Could not finish Bonpreu verification flow.")
 
         raise BonpreuLoginExpiredError("Email-code verification did not complete before timeout.")
+
+    def _build_progress(
+        self,
+        *,
+        callback_url: str | None = None,
+        email_code_required: bool = False,
+    ) -> LoginProgress:
+        return LoginProgress(
+            callback_url=callback_url,
+            email_code_required=email_code_required,
+            observed_redirect_uris=list(self._observed_redirect_uris),
+        )
 
     async def _send_request(
         self,
@@ -480,3 +547,60 @@ def _read_query_value(query: dict[str, list[str]], key: str) -> str | None:
         return None
     value = values[0].strip()
     return value or None
+
+
+def is_intermediate_callback_url(candidate_url: str) -> bool:
+    """Check whether URL is Bonpreu web intermediary callback endpoint."""
+    parsed = urlparse(candidate_url)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == _INTERMEDIATE_HOST
+        and parsed.path in _INTERMEDIATE_PATHS
+    )
+
+
+def promote_intermediate_callback_url(candidate_url: str) -> str | None:
+    """Promote /sso-login callback URL to /sso-login/auth preserving query."""
+    parsed = urlparse(candidate_url)
+    if parsed.scheme != "https" or parsed.hostname != _INTERMEDIATE_HOST:
+        return None
+    if parsed.path != "/sso-login":
+        return None
+    promoted = parsed._replace(path="/sso-login/auth")
+    return promoted.geturl()
+
+
+def extract_mobile_callback_url_from_html(html: str) -> str | None:
+    """Extract mobile callback URL from HTML/script content when present."""
+    patterns = (
+        r"bonpreu-atm://login\?[^\"'\s<]+",
+        r"bonpreu-atm:\\/\\/login\?[^\"'\s<]+",
+        r"bonpreu-atm:\\u002F\\u002Flogin\?[^\"'\s<]+",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, html)
+        if not match:
+            continue
+        candidate = match.group(0)
+        candidate = candidate.replace("\\/", "/")
+        candidate = candidate.replace("\\u002F", "/")
+        callback = extract_callback_url(candidate)
+        if callback and callback.startswith(f"{_MOBILE_CALLBACK_SCHEME}://"):
+            return callback
+    return None
+
+
+def _collect_redirect_uri_candidates(url: str, sink: list[str]) -> None:
+    parsed = urlparse(url)
+    query = parse_query_preserving_plus(parsed.query)
+    values = query.get("redirect_uri") or []
+    for value in values:
+        cleaned = value.strip()
+        if not cleaned:
+            continue
+        candidate = unquote(cleaned)
+        parsed_candidate = urlparse(candidate)
+        if not parsed_candidate.scheme:
+            continue
+        if candidate not in sink:
+            sink.append(candidate)

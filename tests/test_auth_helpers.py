@@ -46,9 +46,14 @@ def _install_homeassistant_stubs() -> None:
 _install_homeassistant_stubs()
 
 from custom_components.bonpreu.api.auth import (
+    callback_redirect_uri_candidate,
+    expand_redirect_candidate_variants,
+    infer_redirect_candidates_from_state,
     is_expected_callback_url,
     is_intermediate_callback_url,
     parse_callback_query,
+    parse_query_preserving_plus,
+    parse_query_raw,
     parse_callback_url,
     states_match,
 )
@@ -63,6 +68,18 @@ class AuthHelpersTests(unittest.TestCase):
         parsed = parse_callback_query(url)
         self.assertEqual(parsed.state, "abc123")
         self.assertEqual(parsed.code, "auth-code")
+        self.assertEqual(parsed.raw_code, "auth-code")
+
+    def test_parse_callback_query_preserves_plus(self) -> None:
+        parsed = parse_callback_query("bonpreu-atm://login?state=s1&code=a+b")
+        self.assertEqual(parsed.code, "a+b")
+        self.assertEqual(parsed.raw_code, "a+b")
+
+    def test_parse_query_raw_keeps_percent_encoding(self) -> None:
+        decoded = parse_query_preserving_plus("code=a%2Bb")
+        raw = parse_query_raw("code=a%2Bb")
+        self.assertEqual(decoded["code"], ["a+b"])
+        self.assertEqual(raw["code"], ["a%2Bb"])
 
     def test_parse_expected_mobile_callback(self) -> None:
         callback = "bonpreu-atm://login?state=foo&code=bar"
@@ -117,6 +134,33 @@ class AuthHelpersTests(unittest.TestCase):
                 "https://www.compraonline.bonpreuesclat.cat/sso-login?state=s&code=c"
             )
         )
+
+    def test_infer_redirect_candidates_from_wrapped_state(self) -> None:
+        redirect = "https://www.compraonline.bonpreuesclat.cat/sso-login/auth"
+        expected_state = "state-123"
+        encoded_redirect = base64.b64encode(redirect.encode()).decode().rstrip("=")
+        encoded_state = base64.b64encode(expected_state.encode()).decode().rstrip("=")
+        received_state = f"mobile_{encoded_redirect}_{encoded_state}_68b543b2-04d6-4e9c-9a33-90dcdfa4bd3f"
+
+        candidates = infer_redirect_candidates_from_state(
+            expected_state=expected_state,
+            received_state=received_state,
+            default_redirect_uri="bonpreu-atm://login",
+        )
+        self.assertEqual(candidates[0], "bonpreu-atm://login")
+        self.assertIn(redirect, candidates)
+
+    def test_expand_redirect_candidates_adds_intermediate_pair(self) -> None:
+        expanded = expand_redirect_candidate_variants(
+            ["https://www.compraonline.bonpreuesclat.cat/sso-login"]
+        )
+        self.assertIn("https://www.compraonline.bonpreuesclat.cat/sso-login/auth", expanded)
+
+    def test_callback_redirect_uri_candidate_for_intermediate(self) -> None:
+        candidate = callback_redirect_uri_candidate(
+            "https://www.compraonline.bonpreuesclat.cat/sso-login?state=s1&code=c1"
+        )
+        self.assertEqual(candidate, "https://www.compraonline.bonpreuesclat.cat/sso-login")
 
 
 if __name__ == "__main__":

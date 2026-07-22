@@ -29,5 +29,6 @@ class CallbackParams:
 
     code: str | None
     state: str
+    raw_code: str | None = None
     error: str | None = None
     error_description: str | None = None
