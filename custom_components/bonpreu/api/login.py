@@ -296,7 +296,7 @@ class BonpreuCredentialLoginTransaction:
 
         for _ in range(_MAX_FLOW_STEPS):
             self._assert_active()
-            response_url, location, html = await self._send_request(
+            status, response_url, location, html = await self._send_request(
                 method=method,
                 url=url,
                 payload=payload,
@@ -324,7 +324,8 @@ class BonpreuCredentialLoginTransaction:
                 payload = None
                 continue
 
-            self._raise_for_browser_challenge(html, response_url)
+            forms = parse_html_forms(html, base_url=response_url)
+            self._raise_for_browser_challenge(status, html, response_url, forms=forms)
 
             promoted_intermediate = promote_intermediate_callback_url(response_url)
             if promoted_intermediate and promoted_intermediate not in attempted_intermediate_auth:
@@ -340,8 +341,6 @@ class BonpreuCredentialLoginTransaction:
 
             if is_intermediate_callback_url(response_url):
                 return self._build_progress(callback_url=response_url)
-
-            forms = parse_html_forms(html, base_url=response_url)
 
             if not submitted_credentials:
                 credential_form = select_credentials_form(forms)
@@ -383,7 +382,7 @@ class BonpreuCredentialLoginTransaction:
 
         for _ in range(_MAX_FLOW_STEPS):
             self._assert_active()
-            response_url, location, html = await self._send_request(
+            status, response_url, location, html = await self._send_request(
                 method=current_method,
                 url=current_url,
                 payload=current_payload,
@@ -411,7 +410,8 @@ class BonpreuCredentialLoginTransaction:
                 current_payload = None
                 continue
 
-            self._raise_for_browser_challenge(html, response_url)
+            forms = parse_html_forms(html, base_url=response_url)
+            self._raise_for_browser_challenge(status, html, response_url, forms=forms)
 
             promoted_intermediate = promote_intermediate_callback_url(response_url)
             if promoted_intermediate and promoted_intermediate not in attempted_intermediate_auth:
@@ -427,8 +427,6 @@ class BonpreuCredentialLoginTransaction:
 
             if is_intermediate_callback_url(response_url):
                 return self._build_progress(callback_url=response_url)
-
-            forms = parse_html_forms(html, base_url=response_url)
 
             email_code_form = select_email_code_form(forms)
             if email_code_form is not None:
@@ -463,20 +461,21 @@ class BonpreuCredentialLoginTransaction:
         method: str,
         url: str,
         payload: dict[str, str] | None,
-    ) -> tuple[str, str | None, str]:
+    ) -> tuple[int, str, str | None, str]:
         request_url = self._ensure_allowed_request_url(url)
         kwargs: dict[str, Any] = {"allow_redirects": False}
         if method.upper() == "POST":
             kwargs["data"] = payload or {}
 
         async with self._session.request(method.upper(), request_url, **kwargs) as response:
+            status = response.status
             location = response.headers.get("Location")
             response_url = str(response.url)
             body = await response.content.read(_MAX_HTML_BYTES + 1)
             if len(body) > _MAX_HTML_BYTES:
                 raise BonpreuLoginChallengeError("Bonpreu response is too large for scripted login.")
             html = body.decode(response.charset or "utf-8", errors="replace")
-            return response_url, location, html
+            return status, response_url, location, html
 
     def _ensure_allowed_request_url(self, url: str) -> str:
         parsed = urlparse(url)
@@ -497,16 +496,33 @@ class BonpreuCredentialLoginTransaction:
         if (time.monotonic() - self._created_at) > _FLOW_TTL_SECONDS:
             raise BonpreuLoginExpiredError("Credential login transaction expired.")
 
-    def _raise_for_browser_challenge(self, html: str, response_url: str) -> None:
+    def _raise_for_browser_challenge(
+        self,
+        status: int,
+        html: str,
+        response_url: str,
+        *,
+        forms: list[ParsedHTMLForm] | None = None,
+    ) -> None:
         lowered = html.lower()
+        has_actionable_form = bool(forms and (select_credentials_form(forms) or select_email_code_form(forms)))
         challenge_markers = (
-            "captcha",
             "cf-challenge",
-            "recaptcha",
+            "just a moment",
+            "verify you are human",
             "bot challenge",
             "access denied",
             "awswaf",
         )
+
+        if status in {401, 403, 429} and any(marker in lowered for marker in challenge_markers):
+            raise BonpreuLoginChallengeError(
+                f"Bonpreu requires browser challenge on {urlparse(response_url).hostname}."
+            )
+
+        if has_actionable_form:
+            return
+
         if any(marker in lowered for marker in challenge_markers):
             raise BonpreuLoginChallengeError(
                 f"Bonpreu requires browser challenge on {urlparse(response_url).hostname}."

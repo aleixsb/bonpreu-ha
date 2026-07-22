@@ -37,6 +37,7 @@ def _install_aiohttp_stubs() -> None:
 _install_aiohttp_stubs()
 
 from custom_components.bonpreu.api.login import (  # noqa: E402
+    BonpreuCredentialLoginTransaction,
     extract_callback_url,
     extract_callback_url_from_location,
     extract_mobile_callback_url_from_html,
@@ -45,6 +46,7 @@ from custom_components.bonpreu.api.login import (  # noqa: E402
     select_credentials_form,
     select_email_code_form,
 )
+from custom_components.bonpreu.api.exceptions import BonpreuLoginChallengeError
 
 
 class LoginHelperTests(unittest.TestCase):
@@ -118,6 +120,36 @@ class LoginHelperTests(unittest.TestCase):
         html = '<script>window.location="bonpreu-atm://login?state=s1&code=c1";</script>'
         callback = extract_mobile_callback_url_from_html(html)
         self.assertEqual(callback, "bonpreu-atm://login?state=s1&code=c1")
+
+    def test_challenge_detection_ignores_recaptcha_marker_when_form_is_present(self) -> None:
+        html = """
+        <html><body>
+          <form method="post" action="/auth">
+            <input type="text" name="username" value="" />
+            <input type="password" name="password" value="" />
+            <input type="hidden" name="bp-recaptcha-required" value="false" />
+          </form>
+        </body></html>
+        """
+        forms = parse_html_forms(html, base_url="https://app.bonpreu.cat/auth")
+        BonpreuCredentialLoginTransaction._raise_for_browser_challenge(
+            None,
+            200,
+            html,
+            "https://app.bonpreu.cat/auth",
+            forms=forms,
+        )
+
+    def test_challenge_detection_raises_on_challenge_page(self) -> None:
+        html = "<html><body>Just a moment. Verify you are human.</body></html>"
+        with self.assertRaises(BonpreuLoginChallengeError):
+            BonpreuCredentialLoginTransaction._raise_for_browser_challenge(
+                None,
+                403,
+                html,
+                "https://app.bonpreu.cat/auth",
+                forms=[],
+            )
 
 
 if __name__ == "__main__":
