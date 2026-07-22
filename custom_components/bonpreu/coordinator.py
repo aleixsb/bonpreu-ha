@@ -97,6 +97,12 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch cart and enrich item metadata with product details."""
         cart_payload = await self.client.get_cart_active()
         if isinstance(cart_payload, dict):
+            try:
+                cart_view = await self.client.get_cart_view()
+            except BonpreuApiError as err:
+                _LOGGER.debug("Cart view enrichment failed: %s", err)
+            else:
+                _merge_cart_view_items(cart_payload, cart_view)
             await self._enrich_cart_items(cart_payload)
         return cart_payload
 
@@ -394,6 +400,87 @@ def _extract_cart_item_dicts(cart_payload: Any) -> list[dict[str, Any]]:
     if not raw_items:
         return []
     return [item for item in raw_items if isinstance(item, dict)]
+
+
+def _merge_cart_view_items(cart_payload: dict[str, Any], cart_view: Any) -> None:
+    """Copy product metadata from the detailed cart-view response into cart lines."""
+    view_products = _collect_cart_view_products(cart_view)
+    if not view_products:
+        return
+
+    for item in _extract_cart_item_dicts(cart_payload):
+        product = _match_product_metadata(item, view_products)
+        if product is None:
+            continue
+
+        name = _extract_best_product_name(product)
+        if name:
+            item.setdefault("name", name)
+            item.setdefault("productName", name)
+
+        for source_key, target_key in (
+            ("brand", "brand"),
+            ("description", "description"),
+            ("available", "available"),
+            ("isAvailable", "isAvailable"),
+            ("retailerProductId", "retailerProductId"),
+            ("productId", "productId"),
+        ):
+            if target_key not in item and source_key in product:
+                item[target_key] = product[source_key]
+
+
+def _collect_cart_view_products(payload: Any) -> list[dict[str, Any]]:
+    """Find named product-like objects in the nested cart-view response."""
+    products: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            value_id = id(value)
+            if value_id in seen:
+                return
+            seen.add(value_id)
+
+            has_identifier = any(
+                _stringify_identifier(value.get(key))
+                for key in ("productId", "retailerProductId", "id", "sku")
+            )
+            has_name = _extract_best_product_name(value) is not None
+            if has_identifier and has_name:
+                products.append(value)
+
+            for nested in value.values():
+                visit(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                visit(nested)
+
+    visit(payload)
+    return products
+
+
+def _match_product_metadata(
+    item: dict[str, Any],
+    products: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    item_ids = {
+        _stringify_identifier(item.get(key)).lower()
+        for key in ("productId", "retailerProductId", "id", "sku")
+        if _stringify_identifier(item.get(key))
+    }
+    if not item_ids:
+        return None
+
+    for product in products:
+        product_ids = {
+            _stringify_identifier(product.get(key)).lower()
+            for key in ("productId", "retailerProductId", "id", "sku")
+            if _stringify_identifier(product.get(key))
+        }
+        if item_ids & product_ids:
+            return product
+    return None
 
 
 def _collect_product_ids(items: list[dict[str, Any]]) -> list[str]:

@@ -121,6 +121,8 @@ class _FakeClient:
         self.add_calls: list[tuple[str, int]] = []
         self.get_cart_calls = 0
 
+        self.cart_view_payload: dict[str, Any] = {}
+
     async def get_cart_active(self) -> dict[str, Any]:
         self.get_cart_calls += 1
         return self.cart_payload
@@ -129,6 +131,9 @@ class _FakeClient:
         if self.raise_products_error:
             raise BonpreuApiError("enrichment failed")
         return self.products_payload
+
+    async def get_cart_view(self) -> dict[str, Any]:
+        return self.cart_view_payload
 
     async def add_to_cart(self, retailer_product_id: str, delta: int = 1) -> dict[str, Any]:
         self.add_calls.append((retailer_product_id, delta))
@@ -216,6 +221,37 @@ class CoordinatorCartTests(unittest.IsolatedAsyncioTestCase):
 
         payload = await self.coordinator._fetch_cart_with_products()
         self.assertEqual(payload["items"][0].get("name"), "Greek Yogurt")
+
+    async def test_cart_view_enrichment_populates_nested_product_name(self) -> None:
+        self.client.cart_payload = {
+            "items": [
+                {
+                    "productId": "product-3",
+                    "retailerProductId": "14104",
+                    "quantity": 1,
+                }
+            ]
+        }
+        self.client.cart_view_payload = {
+            "checkoutGroups": [
+                {
+                    "unassignedProducts": [
+                        {
+                            "productId": "product-3",
+                            "retailerProductId": "14104",
+                            "description": "Fresh Orange Juice",
+                            "available": True,
+                        }
+                    ]
+                }
+            ]
+        }
+
+        payload = await self.coordinator._fetch_cart_with_products()
+        item = payload["items"][0]
+
+        self.assertEqual(item.get("name"), "Fresh Orange Juice")
+        self.assertEqual(item.get("productName"), "Fresh Orange Juice")
 
     async def test_set_cart_quantity_uses_fresh_server_cart_before_delta(self) -> None:
         self.coordinator.data = {
