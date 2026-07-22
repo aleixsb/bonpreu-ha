@@ -118,10 +118,13 @@ class _FakeClient:
         self.cart_payload: dict[str, Any] = {"items": []}
         self.products_payload: list[dict[str, Any]] = []
         self.raise_products_error = False
+        self.products_error_status_code: int | None = None
         self.add_calls: list[tuple[str, int]] = []
         self.get_cart_calls = 0
 
         self.cart_view_payload: dict[str, Any] = {}
+        self.product_detail_payloads: dict[str, dict[str, Any]] = {}
+        self.product_detail_calls: list[str] = []
 
     async def get_cart_active(self) -> dict[str, Any]:
         self.get_cart_calls += 1
@@ -129,8 +132,15 @@ class _FakeClient:
 
     async def get_products(self, product_ids: list[str]) -> list[dict[str, Any]]:
         if self.raise_products_error:
-            raise BonpreuApiError("enrichment failed")
+            raise BonpreuApiError("enrichment failed", status_code=self.products_error_status_code)
         return self.products_payload
+
+    async def get_product_detail(self, retailer_product_id: str) -> dict[str, Any]:
+        self.product_detail_calls.append(retailer_product_id)
+        payload = self.product_detail_payloads.get(retailer_product_id)
+        if payload is None:
+            raise BonpreuApiError("not found", status_code=404)
+        return payload
 
     async def get_cart_view(self) -> dict[str, Any]:
         return self.cart_view_payload
@@ -221,6 +231,37 @@ class CoordinatorCartTests(unittest.IsolatedAsyncioTestCase):
 
         payload = await self.coordinator._fetch_cart_with_products()
         self.assertEqual(payload["items"][0].get("name"), "Greek Yogurt")
+
+    async def test_cart_enrichment_falls_back_to_product_detail_on_422(self) -> None:
+        self.client.cart_payload = {
+            "items": [
+                {
+                    "productId": "product-missing",
+                    "retailerProductId": "49637",
+                    "quantity": 1,
+                }
+            ]
+        }
+        self.client.raise_products_error = True
+        self.client.products_error_status_code = 422
+        self.client.product_detail_payloads = {
+            "49637": {
+                "product": {
+                    "productId": "ec11323b",
+                    "retailerProductId": "49637",
+                    "description": "Espresso Capsules",
+                    "brand": "DOLCE GUSTO",
+                }
+            }
+        }
+
+        payload = await self.coordinator._fetch_cart_with_products()
+        item = payload["items"][0]
+
+        self.assertEqual(item.get("name"), "Espresso Capsules")
+        self.assertEqual(item.get("productName"), "Espresso Capsules")
+        self.assertEqual(item.get("brand"), "DOLCE GUSTO")
+        self.assertEqual(self.client.product_detail_calls, ["49637"])
 
     async def test_cart_view_enrichment_populates_nested_product_name(self) -> None:
         self.client.cart_payload = {

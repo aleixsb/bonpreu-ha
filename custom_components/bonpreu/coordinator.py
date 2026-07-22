@@ -113,26 +113,30 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         product_ids = _collect_product_ids(item_dicts)
+        retailer_product_ids = _collect_retailer_product_ids(item_dicts)
         by_product_id: dict[str, dict[str, Any]] = dict(self._product_cache_by_product_id)
         by_retailer_id: dict[str, dict[str, Any]] = dict(self._product_cache_by_retailer_id)
 
+        products: list[dict[str, Any]] = []
         if product_ids:
             try:
                 products = await self.client.get_products(product_ids)
             except BonpreuApiError as err:
                 _LOGGER.debug("Cart product enrichment failed: %s", err)
-            else:
-                for product in products:
-                    if not isinstance(product, dict):
-                        continue
-                    product_id = str(product.get("productId") or "").strip()
-                    retailer_product_id = str(product.get("retailerProductId") or "").strip()
-                    if product_id:
-                        by_product_id[product_id] = product
-                        self._product_cache_by_product_id[product_id] = product
-                    if retailer_product_id:
-                        by_retailer_id[retailer_product_id] = product
-                        self._product_cache_by_retailer_id[retailer_product_id] = product
+                if err.status_code == 422 and retailer_product_ids:
+                    products = await self._fetch_products_by_retailer_id(retailer_product_ids)
+
+        for product in products:
+            if not isinstance(product, dict):
+                continue
+            product_id = str(product.get("productId") or "").strip()
+            retailer_product_id = str(product.get("retailerProductId") or "").strip()
+            if product_id:
+                by_product_id[product_id] = product
+                self._product_cache_by_product_id[product_id] = product
+            if retailer_product_id:
+                by_retailer_id[retailer_product_id] = product
+                self._product_cache_by_retailer_id[retailer_product_id] = product
 
         for item in item_dicts:
             product_id = str(item.get("productId") or "").strip()
@@ -158,6 +162,24 @@ class BonpreuDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             resolved_retailer_product_id = str(product.get("retailerProductId") or "").strip()
             if resolved_retailer_product_id and not item.get("retailerProductId"):
                 item["retailerProductId"] = resolved_retailer_product_id
+
+    async def _fetch_products_by_retailer_id(self, retailer_product_ids: list[str]) -> list[dict[str, Any]]:
+        """Fallback enrichment using product detail endpoint per retailer id."""
+
+        async def _fetch_one(retailer_product_id: str) -> dict[str, Any] | None:
+            try:
+                payload = await self.client.get_product_detail(retailer_product_id)
+            except BonpreuApiError as err:
+                _LOGGER.debug(
+                    "Cart fallback enrichment failed for retailer product '%s': %s",
+                    retailer_product_id,
+                    err,
+                )
+                return None
+            return _extract_product_from_detail_payload(payload, retailer_product_id)
+
+        products = await asyncio.gather(*(_fetch_one(product_id) for product_id in retailer_product_ids))
+        return [product for product in products if isinstance(product, dict)]
 
     def _set_endpoint_data(self, key: str, value: Any) -> None:
         """Update a single endpoint payload in coordinator cache."""
@@ -495,6 +517,17 @@ def _collect_product_ids(items: list[dict[str, Any]]) -> list[str]:
     return list(unique_ids)
 
 
+def _collect_retailer_product_ids(items: list[dict[str, Any]]) -> list[str]:
+    unique_ids: dict[str, None] = {}
+    for item in items:
+        retailer_product_id = _stringify_identifier(item.get("retailerProductId"))
+        if not retailer_product_id:
+            retailer_product_id = _stringify_identifier(item.get("retailer_product_id"))
+        if retailer_product_id:
+            unique_ids[retailer_product_id] = None
+    return list(unique_ids)
+
+
 def _stringify_identifier(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
@@ -511,6 +544,29 @@ def _extract_best_product_name(product: dict[str, Any]) -> str | None:
             if cleaned:
                 return cleaned
     return None
+
+
+def _extract_product_from_detail_payload(payload: Any, retailer_product_id: str) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    product = payload.get("product")
+    if not isinstance(product, dict):
+        product = payload
+    if not isinstance(product, dict):
+        return None
+
+    normalized = dict(product)
+    if not _stringify_identifier(normalized.get("retailerProductId")) and retailer_product_id:
+        normalized["retailerProductId"] = retailer_product_id
+
+    has_identifier = any(
+        _stringify_identifier(normalized.get(key))
+        for key in ("productId", "retailerProductId", "id", "sku")
+    )
+    if not has_identifier:
+        return None
+    return normalized
 
 
 def _cart_quantity_for_product(cart_payload: Any, retailer_product_id: str) -> int:
